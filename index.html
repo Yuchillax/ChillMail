@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chillmail — Serene Email Experience</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
+      --accent-blue: #0284c7;
+      --accent-hover: #0369a1;
+      --accent-light: #e0f2fe;
+      --text-dark: #0f172a;
+      --text-muted: #64748b;
+      --card-bg: rgba(255, 255, 255, 0.85);
+      --border-color: #bae6fd;
+      --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 10px 15px -3px rgba(14, 165, 233, 0.1), 0 4px 6px -4px rgba(14, 165, 233, 0.05);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      background: var(--bg-gradient);
+      color: var(--text-dark);
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Snowflake Loader */
+    #loader {
+      position: fixed;
+      inset: 0;
+      background: #f0f9ff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease, visibility 0.5s;
+    }
+
+    .snowflake {
+      color: var(--accent-blue);
+      font-size: 3.5rem;
+      animation: spin 3s linear infinite;
+    }
+
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
+    }
+
+    /* App Layout */
+    .app-container {
+      display: flex;
+      width: 100%;
+      height: 100vh;
+      opacity: 0;
+      animation: fadeIn 0.6s ease forwards;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 260px;
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      padding: 1.5rem 1rem;
+      gap: 1.5rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--accent-blue);
+    }
+
+    .compose-btn {
+      background: var(--accent-blue);
+      color: white;
+      border: none;
+      padding: 0.85rem;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      box-shadow: var(--shadow-md);
+      transition: all 0.2s ease;
+    }
+
+    .compose-btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+    }
+
+    .nav-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .nav-item {
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-weight: 500;
+    }
+
+    .nav-item:hover, .nav-item.active {
+      background: var(--accent-light);
+      color: var(--accent-blue);
+    }
+
+    /* User Profile Footer */
+    .user-profile {
+      margin-top: auto;
+      padding: 0.75rem;
+      border-radius: 12px;
+      background: white;
+      border: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--accent-light);
+    }
+
+    /* Main Area */
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: rgba(255, 255, 255, 0.4);
+    }
+
+    /* Auth Screen (Welcome View) */
+    .auth-card {
+      margin: auto;
+      background: white;
+      padding: 2.5rem;
+      border-radius: 20px;
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--border-color);
+      text-align: center;
+      max-width: 420px;
+      animation: slideUp 0.4s ease;
+    }
+
+    .auth-card h2 {
+      margin-top: 1rem;
+      color: var(--text-dark);
+    }
+
+    .auth-card p {
+      color: var(--text-muted);
+      margin: 0.5rem 0 1.5rem;
+      font-size: 0.95rem;
+    }
+
+    .btn-google {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      background: white;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: background 0.2s;
+    }
+
+    .btn-google:hover {
+      background: #f8fafc;
+    }
+
+    /* Email View Header */
+    .content-header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: white;
+    }
+
+    .search-bar {
+      background: var(--accent-light);
+      border: none;
+      padding: 0.6rem 1rem;
+      border-radius: 20px;
+      width: 280px;
+      outline: none;
+      color: var(--text-dark);
+    }
+
+    /* Email List */
+    .email-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .email-card {
+      background: white;
+      padding: 1.25rem;
+      border-radius: 14px;
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .email-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+      border-color: var(--accent-blue);
+    }
+
+    /* Contact Card */
+    .contact-card {
+      background: white;
+      padding: 1rem;
+      border-radius: 14px;
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow-sm);
+      width: 220px;
+      text-align: center;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+
+    .contact-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .delete-contact-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: none;
+      border: none;
+      color: #ef4444;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+
+    /* Modal Styling */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.3);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s ease;
+    }
+
+    .modal.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-body {
+      background: white;
+      border-radius: 18px;
+      padding: 2rem;
+      width: 90%;
+      max-width: 550px;
+      box-shadow: var(--shadow-md);
+      animation: slideUp 0.3s ease;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      outline: none;
+    }
+
+    .form-input:focus {
+      border-color: var(--accent-blue);
+    }
+
+    /* Dropdown Explainer */
+    details {
+      background: var(--accent-light);
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    details summary {
+      font-weight: 600;
+      color: var(--accent-blue);
+    }
+
+    details p {
+      margin-top: 0.5rem;
+      color: var(--text-dark);
+      line-height: 1.4;
+    }
+
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Snowflake Loading Screen -->
+  <div id="loader">
+    <i class="fa-regular fa-snowflake snowflake"></i>
+    <p style="margin-top: 1rem; color: var(--text-muted); font-weight: 500;">Chilling out...</p>
+  </div>
+
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <i class="fa-regular fa-snowflake"></i> Chillmail
+      </div>
+
+      <!-- Compose Button (hidden until logged in) -->
+      <button class="compose-btn" id="sidebarComposeBtn" style="display: none;" onclick="openModal('composeModal')">
+        <i class="fa-solid fa-pen"></i> Compose
+      </button>
+
+      <ul class="nav-list">
+        <li class="nav-item active" onclick="switchView('inbox')"><i class="fa-solid fa-inbox"></i> Inbox</li>
+        <li class="nav-item" onclick="switchView('contacts')"><i class="fa-solid fa-address-book"></i> Contacts</li>
+        <li class="nav-item" onclick="openModal('settingsModal')"><i class="fa-solid fa-gear"></i> Settings</li>
+      </ul>
+
+      <!-- User Profile (hidden until logged in) -->
+      <div class="user-profile" id="sidebarUserProfile" style="display: none;" onclick="openModal('settingsModal')">
+        <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Chill" class="avatar" id="sidebarAvatar" alt="Avatar">
+        <div style="overflow: hidden;">
+          <div style="font-weight: 600; font-size: 0.9rem;" id="sidebarName">Chill User</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);" id="sidebarStatus">Connected</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Unauthenticated View -->
+      <div id="authView" class="auth-card">
+        <i class="fa-regular fa-snowflake" style="font-size: 3rem; color: var(--accent-blue);"></i>
+        <h2>Welcome to Chillmail</h2>
+        <p>Connect your account or set up a Google OAuth Client ID to access real email capabilities.</p>
+        <button class="btn-google" onclick="openModal('settingsModal')">
+          <i class="fa-solid fa-key"></i> Configure OAuth / Settings
+        </button>
+      </div>
+
+      <!-- Authenticated Inbox View -->
+      <div id="inboxView" style="display: none; flex-direction: column; height: 100%;">
+        <div class="content-header">
+          <h2>Inbox</h2>
+          <input type="text" class="search-bar" placeholder="Search vibes...">
+        </div>
+        <div class="email-list" id="emailList">
+          <!-- Dynamic emails render here -->
+        </div>
+      </div>
+
+      <!-- Contacts View -->
+      <div id="contactsView" style="display: none; flex-direction: column; height: 100%; padding: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+          <h2>Contacts</h2>
+          <button class="compose-btn" onclick="openModal('addContactModal')">
+            <i class="fa-solid fa-plus"></i> Add Contact
+          </button>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 1rem;" id="contactsList">
+          <!-- Dynamic contacts render here -->
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal" id="settingsModal">
+    <div class="modal-body">
+      <h3>Settings</h3>
+      <br>
+
+      <details>
+        <summary>How to get a Google Client ID?</summary>
+        <p>1. Go to the <b>Google Cloud Console</b>.<br>
+           2. Create a project and configure the OAuth consent screen.<br>
+           3. Create an <b>OAuth 2.0 Client ID</b> (Web application).<br>
+           4. Add https://sites.google.com to Authorized JavaScript origins.</p>
+      </details>
+
+      <div class="form-group">
+        <label>Display Name</label>
+        <input type="text" id="settingName" class="form-input" value="Chill User">
+      </div>
+      <div class="form-group">
+        <label>Avatar URL</label>
+        <input type="text" id="settingAvatar" class="form-input" value="https://api.dicebear.com/7.x/bottts/svg?seed=Chill">
+      </div>
+      <div class="form-group">
+        <label>Google OAuth Client ID</label>
+        <input type="text" id="settingClientId" class="form-input" placeholder="your-client-id.apps.googleusercontent.com">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button class="compose-btn" style="background: #cbd5e1; color: var(--text-dark);" onclick="closeModal('settingsModal')">Cancel</button>
+        <button class="compose-btn" onclick="saveSettings()">Save & Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Contact Modal -->
+  <div class="modal" id="addContactModal">
+    <div class="modal-body">
+      <h3>Add New Contact</h3>
+      <br>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" class="form-input" id="contactNameInput" placeholder="Jane Doe">
+      </div>
+      <div class="form-group">
+        <label>Email Address</label>
+        <input type="email" class="form-input" id="contactEmailInput" placeholder="jane@example.com">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+        <button class="compose-btn" style="background: #cbd5e1; color: var(--text-dark);" onclick="closeModal('addContactModal')">Cancel</button>
+        <button class="compose-btn" onclick="addContact()">Save Contact</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compose Modal -->
+  <div class="modal" id="composeModal">
+    <div class="modal-body">
+      <h3>New Message</h3>
+      <br>
+      <div class="form-group">
+        <label>To</label>
+        <input type="text" class="form-input" id="composeTo" placeholder="recipient@example.com">
+      </div>
+      <div class="form-group">
+        <label>CC / BCC</label>
+        <input type="text" class="form-input" id="composeCc" placeholder="cc@example.com">
+      </div>
+      <div class="form-group">
+        <label>Subject</label>
+        <input type="text" class="form-input" id="composeSubject" placeholder="Chill vibes only">
+      </div>
+      <div class="form-group">
+        <label>Message</label>
+        <textarea class="form-input" id="composeBody" rows="4" placeholder="Write your email here..."></textarea>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+        <button class="compose-btn" style="background: #cbd5e1; color: var(--text-dark);" onclick="closeModal('composeModal')">Cancel</button>
+        <button class="compose-btn" onclick="sendEmail()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State management
+    let contacts = JSON.parse(localStorage.getItem('chill_contacts') || '[]');
+
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        document.getElementById('loader').style.opacity = '0';
+        setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
+      }, 800);
+
+      loadSettings();
+    });
+
+    function openModal(id) {
+      document.getElementById(id).classList.add('active');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('active');
+    }
+
+    function switchView(view) {
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('inboxView').style.display = 'none';
+      document.getElementById('contactsView').style.display = 'none';
+      
+      if(view === 'inbox') {
+        document.getElementById('inboxView').style.display = 'flex';
+      } else if(view === 'contacts') {
+        document.getElementById('contactsView').style.display = 'flex';
+        renderContacts();
+      }
+    }
+
+    function updateAuthState(isLoggedIn) {
+      const composeBtn = document.getElementById('sidebarComposeBtn');
+      const userProfile = document.getElementById('sidebarUserProfile');
+      const authView = document.getElementById('authView');
+      const inboxView = document.getElementById('inboxView');
+
+      if (isLoggedIn) {
+        composeBtn.style.display = 'flex';
+        userProfile.style.display = 'flex';
+        authView.style.display = 'none';
+        inboxView.style.display = 'flex';
+        renderDemoEmails();
+      } else {
+        composeBtn.style.display = 'none';
+        userProfile.style.display = 'none';
+        authView.style.display = 'block';
+        inboxView.style.display = 'none';
+      }
+    }
+
+    function saveSettings() {
+      const name = document.getElementById('settingName').value;
+      const avatar = document.getElementById('settingAvatar').value;
+      const clientId = document.getElementById('settingClientId').value;
+
+      localStorage.setItem('chill_name', name);
+      localStorage.setItem('chill_avatar', avatar);
+      localStorage.setItem('chill_client_id', clientId);
+
+      document.getElementById('sidebarName').innerText = name;
+      document.getElementById('sidebarAvatar').src = avatar;
+
+      updateAuthState(!!clientId);
+      closeModal('settingsModal');
+    }
+
+    function loadSettings() {
+      const name = localStorage.getItem('chill_name') || 'Chill User';
+      const avatar = localStorage.getItem('chill_avatar') || 'https://api.dicebear.com/7.x/bottts/svg?seed=Chill';
+      const clientId = localStorage.getItem('chill_client_id');
+
+      document.getElementById('settingName').value = name;
+      document.getElementById('settingAvatar').value = avatar;
+      document.getElementById('settingClientId').value = clientId || '';
+
+      document.getElementById('sidebarName').innerText = name;
+      document.getElementById('sidebarAvatar').src = avatar;
+
+      updateAuthState(!!clientId);
+    }
+
+    function addContact() {
+      const name = document.getElementById('contactNameInput').value.trim();
+      const email = document.getElementById('contactEmailInput').value.trim();
+
+      if (!name || !email) {
+        alert('Please fill out both fields.');
+        return;
+      }
+
+      contacts.push({ id: Date.now(), name, email });
+      localStorage.setItem('chill_contacts', JSON.stringify(contacts));
+
+      document.getElementById('contactNameInput').value = '';
+      document.getElementById('contactEmailInput').value = '';
+
+      closeModal('addContactModal');
+      renderContacts();
+    }
+
+    function deleteContact(id) {
+      contacts = contacts.filter(c => c.id !== id);
+      localStorage.setItem('chill_contacts', JSON.stringify(contacts));
+      renderContacts();
+    }
+
+    function renderContacts() {
+      const list = document.getElementById('contactsList');
+      if (contacts.length === 0) {
+        list.innerHTML = `
+          <p style="color: var(--text-muted); font-size: 0.95rem;">No contacts saved yet. Click "Add Contact" above!</p>
+        `;
+        return;
+      }
+
+      list.innerHTML = contacts.map(c => `
+        <div class="contact-card">
+          <button class="delete-contact-btn" onclick="deleteContact(${c.id})"><i class="fa-solid fa-trash"></i></button>
+          <img src="https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(c.name)}" style="width: 50px; height: 50px; border-radius: 50%;">
+          <h4 style="margin-top: 0.5rem;">${c.name}</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">${c.email}</p>
+          <button class="compose-btn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; width: 100%;" onclick="quickEmail('${c.email}')">
+            <i class="fa-solid fa-paper-plane"></i> Email
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function quickEmail(email) {
+      document.getElementById('composeTo').value = email;
+      openModal('composeModal');
+    }
+
+    function renderDemoEmails() {
+      const list = document.getElementById('emailList');
+      list.innerHTML = `
+        <div class="email-card">
+          <div>
+            <h4 style="color: var(--accent-blue);">Welcome to Chillmail</h4>
+            <p style="font-size: 0.9rem; color: var(--text-muted);">Enjoy a serene, simple email experience.</p>
+          </div>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Just now</span>
+        </div>
+      `;
+    }
+
+    function sendEmail() {
+      alert('Message sent!');
+      closeModal('composeModal');
+    }
+  </script>
+</body>
+</html>
