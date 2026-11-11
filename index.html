@@ -166,6 +166,9 @@
     .att-warn { margin-top: 0.5rem; padding: 0.5rem 0.7rem; border-radius: 10px; background: #fef9c3; border: 1px solid #fde047; color: #713f12; font-size: 0.8rem; line-height: 1.4; }
     .att-warn div + div { margin-top: 0.3rem; }
 
+    .email-card.unread { border-left: 3px solid var(--accent-blue); }
+    .email-card.unread h4 { font-weight: 700; }
+
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
   </style>
@@ -231,6 +234,11 @@
             <button class="sync-btn" onclick="syncAll(true)"><i class="fa-solid fa-rotate"></i> Sync</button>
             <span class="sync-status" id="syncStatus"></span>
           </div>
+          <select id="readFilter" class="pg-size" onchange="renderFolder()">
+            <option value="all">All mail</option>
+            <option value="unread">Unread</option>
+            <option value="read">Read</option>
+          </select>
           <input type="text" class="search-bar" id="searchInput" placeholder="Search vibes..." oninput="renderFolder()">
         </div>
         <div class="split">
@@ -383,7 +391,7 @@
     const fmtDate = ts => new Date(ts).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
     const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/bottts/svg?seed=Chill';
     const DEFAULT_LOGO = document.getElementById('brandLogo').src;
-    const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
+    const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify';
     const UNDO_SECONDS = 10;
     const THEME_DEFAULTS = { bgStart: '#e0f2fe', bgEnd: '#f0f9ff', accent: '#0284c7', text: '#0f172a' };
     const FOLDER_TITLES = { inbox: 'Inbox', sent: 'Sent', drafts: 'Drafts', scheduled: 'Scheduled', spam: 'Spam', bin: 'Bin' };
@@ -709,7 +717,7 @@
     }
 
     // ---------- Outlook / Microsoft accounts ----------
-    const MS_SCOPES = ['User.Read', 'Mail.Read', 'Mail.Send'];
+    const MS_SCOPES = ['User.Read', 'Mail.ReadWrite', 'Mail.Send'];
     const MS_FOLDERS = { inbox: 'inbox', sent: 'sentitems', drafts: 'drafts', spam: 'junkemail', bin: 'deleteditems' };
     let msalApp = null;
 
@@ -798,7 +806,8 @@
         to: (m.toRecipients || []).map(r => r.emailAddress.address).join(', '),
         subject: m.subject || '(no subject)',
         date: new Date(m.receivedDateTime || m.lastModifiedDateTime || Date.now()).getTime(),
-        snippet: m.bodyPreview || ''
+        snippet: m.bodyPreview || '',
+        unread: m.isRead === false
       };
     }
 
@@ -847,21 +856,29 @@
     // ---------- Gmail API ----------
     async function gmailApi(path, opts = {}) {
       const token = await getToken(false);
-      const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + path, {
-        ...opts,
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers || {}) }
-      });
-      if (!res.ok) {
+      for (let attempt = 0; ; attempt++) {
+        const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + path, {
+          ...opts,
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers || {}) }
+        });
+        if (res.ok) return res.json();
+
         const text = await res.text();
+        const quota = res.status === 429 || (res.status === 403 && /quota|rate/i.test(text));
+        if (quota && attempt < 4) {
+          await new Promise(r => setTimeout(r, 2000 * 2 ** attempt)); // 2s, 4s, 8s, 16s
+          continue;
+        }
         if (res.status === 401) clearToken();
         if (res.status === 403 && /insufficient/i.test(text)) {
           clearToken();
           throw new Error('Google needs permission to read your mail. Click Sync to allow it.');
         }
+        if (quota) throw new Error('Gmail is limiting requests right now. Wait a minute, then try again.');
         throw new Error(`Gmail error ${res.status}: ${text.slice(0, 160)}`);
       }
-      return res.json();
     }
+
 
     // UTF-8 safe base64 (btoa alone breaks on non-Latin characters)
     function b64FromUtf8(str) {
@@ -925,7 +942,8 @@
         to: h('To'),
         subject: h('Subject') || '(no subject)',
         date: Number(m.internalDate) || Date.now(),
-        snippet: m.snippet || ''
+        snippet: m.snippet || '',
+        unread: (m.labelIds || []).includes('UNREAD')
       };
     }
 
@@ -952,7 +970,7 @@
     }
 
     async function fetchSummaries(ids) {
-      const results = await mapLimit(ids, 8, id =>
+      const results = await mapLimit(ids, 4, id =>
         gmailApi(`messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`)
           .then(summarize)
           .catch(() => null));
@@ -972,18 +990,26 @@
       return out.slice(0, limit);
     }
 
+
     async function syncFolder(folder) {
       if (activeProvider() === 'microsoft') return syncOutlookFolder(folder);
       const limit = SYNC_LIMIT();
       const ids = folder === 'drafts'
         ? (await gmailListAll('drafts', 'drafts', limit)).map(d => d.message.id)
         : (await gmailListAll(`messages?labelIds=${FOLDER_LABELS[folder]}`, 'messages', limit)).map(m => m.id);
-      mailCache[folder] = await fetchSummaries(ids);
+
+      // Reuse what we already have; only fetch details for new emails
+      const known = new Map();
+      Object.values(mailCache).forEach(v => { if (Array.isArray(v)) v.forEach(m => { if ('unread' in m) known.set(m.id, m); }); });
+      const missing = ids.filter(id => !known.has(id));
+      const fetched = await fetchSummaries(missing);
+      const byId = new Map([...known, ...fetched.map(m => [m.id, m])]);
+      mailCache[folder] = ids.map(id => byId.get(id)).filter(Boolean);
     }
 
     async function syncOutlookFolder(folder) {
       const limit = SYNC_LIMIT();
-      let url = `me/mailFolders/${MS_FOLDERS[folder]}/messages?$top=${Math.min(100, limit)}&$select=id,subject,from,toRecipients,receivedDateTime,lastModifiedDateTime,bodyPreview`;
+      let url = `me/mailFolders/${MS_FOLDERS[folder]}/messages?$top=${Math.min(100, limit)}&$select=id,subject,from,toRecipients,receivedDateTime,lastModifiedDateTime,bodyPreview,isRead`;
       const items = [];
       while (url && items.length < limit) {
         const d = await graphApi(url);
@@ -995,6 +1021,7 @@
 
     async function syncAll(interactive = false) {
       if (syncing) return;
+      if (!interactive && mailCache.lastSync && Date.now() - mailCache.lastSync < 120000) return;
       if (!localStorage.getItem('chill_client_id')) return;
       syncing = true;
       setSyncStatus('Syncing…');
@@ -1004,8 +1031,10 @@
           return;
         }
         if (interactive) await ensureSession(true);
-        const results = await Promise.allSettled(['inbox', 'sent', 'drafts', 'spam', 'bin'].map(syncFolder));
-        const failed = results.filter(r => r.status === 'rejected');
+        const failed = [];
+        for (const folder of ['inbox', 'sent', 'drafts', 'spam', 'bin']) {
+          try { await syncFolder(folder); } catch (err) { failed.push(err); }
+        }
         mailCache.lastSync = Date.now();
         localStorage.setItem(cacheKey(), JSON.stringify(mailCache));
         setSyncStatus(failed.length ? `Synced with ${failed.length} error(s)` : `Synced ${new Date().toLocaleTimeString([], { timeStyle: 'short' })}`);
@@ -1194,6 +1223,10 @@
         const folder = kind === 'gmail-draft' ? 'drafts' : currentFolder;
         item = (mailCache[folder] || []).find(x => x.id === id);
         if (!item) return;
+        if (kind === 'mail') {
+          markRead(id);
+          actions.insertAdjacentHTML('beforeend', `<button class="compose-btn secondary" onclick="setItemUnread('${esc(id)}', true)">Mark as unread</button>`);
+        }
       }
 
       document.getElementById('viewSubject').textContent = item.subject || '(no subject)';
@@ -1909,10 +1942,10 @@
     function renderFolder() {
       const list = document.getElementById('emailList');
       const query = document.getElementById('searchInput').value.trim().toLowerCase();
-      if (pagerFolder !== currentFolder || pagerQuery !== query) {
+      if (pagerFolder !== currentFolder || pagerQuery !== query + '|' + readFilter()) {
         currentPage = 1;
         pagerFolder = currentFolder;
-        pagerQuery = query;
+        pagerQuery = query + '|' + readFilter();
       }
 
       let items;
@@ -1930,6 +1963,7 @@
       items = items
         .filter(i => !query || [i.subject, i.from, i.to, i.snippet, i.body].some(v => (v || '').toLowerCase().includes(query)))
         .sort((a, b) => b.date - a.date);
+      items = applyReadFilter(items);
 
       const total = items.length;
       if (!total) {
@@ -1949,7 +1983,7 @@
         const who = currentFolder === 'sent' || i.kind === 'scheduled' || i.kind === 'local-draft' ? `To: ${i.to || '(no recipient)'}` : i.from;
         const tag = i.kind === 'scheduled' ? '<span class="tag">Scheduled</span>' : i.kind === 'local-draft' ? '<span class="tag">Draft</span>' : '';
         return `
-          <div class="email-card" onclick="openItem('${i.kind}', '${esc(i.id)}')">
+          <div class="email-card ${isUnread(i) ? 'unread' : ''}" onclick="openItem('${i.kind}', '${esc(i.id)}')">
             <div style="min-width: 0;">
               <h4>${esc(i.subject || '(no subject)')}${tag}</h4>
               <div style="font-size: 0.85rem; color: var(--text-muted);">${esc(who)}</div>
@@ -2004,6 +2038,69 @@
       renderFolder();
     }
 
+    // ---------- Read / unread ----------
+    // Chillmail can't change read state on the server yet (that needs extra permissions),
+    // so opening a message marks it read here, and Gmail/Outlook unread state is shown too.
+    let readSet = new Set(JSON.parse(localStorage.getItem('chill_read') || '[]'));
+
+    function readFilter() {
+      const el = document.getElementById('readFilter');
+      return el ? el.value : 'all';
+    }
+
+    function isUnread(i) {
+      return i.kind === 'mail' && !!i.unread && !readSet.has(i.id);
+    }
+
+    function applyReadFilter(items) {
+      const f = readFilter();
+      if (f === 'all' || !['inbox', 'sent', 'spam', 'bin'].includes(currentFolder)) return items;
+      return items.filter(i => i.kind === 'mail' && (f === 'unread' ? isUnread(i) : !isUnread(i)));
+    }
+
+
+    function findMail(id) {
+      for (const v of Object.values(mailCache)) {
+        if (Array.isArray(v)) {
+          const m = v.find(x => x.id === id);
+          if (m) return m;
+        }
+      }
+      return null;
+    }
+
+    async function setServerRead(id, read) {
+      try {
+        if (activeProvider() === 'microsoft') {
+          await graphApi(`me/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead: read }) });
+        } else {
+          await gmailApi(`messages/${id}/modify`, {
+            method: 'POST',
+            body: JSON.stringify(read ? { removeLabelIds: ['UNREAD'] } : { addLabelIds: ['UNREAD'] })
+          });
+        }
+      } catch (err) {
+        notify(`Couldn't update read status on the server: ${err.message}`, 6000);
+      }
+    }
+
+    // Updates Chillmail, the local cache, and the mailbox on Gmail or Outlook
+    function setItemUnread(id, unread) {
+      const m = findMail(id);
+      if (m) m.unread = unread;
+      localStorage.setItem(cacheKey(), JSON.stringify(mailCache));
+      if (unread) readSet.delete(id); else readSet.add(id);
+      localStorage.setItem('chill_read', JSON.stringify([...readSet]));
+      setServerRead(id, !unread);
+      renderFolder();
+    }
+
+    function markRead(id) {
+      const m = findMail(id);
+      if (!m || !m.unread) return;
+      setItemUnread(id, false);
+    }
+
     // ---------- Startup ----------
     window.addEventListener('load', () => {
       setTimeout(() => {
@@ -2025,7 +2122,7 @@
     });
 
     setInterval(checkScheduled, 1000);
-    setInterval(() => { if (hasSession()) syncAll(false); }, 3 * 60 * 1000);
+    setInterval(() => { if (hasSession()) syncAll(false); }, 10 * 60 * 1000);
   </script>
 </body>
 </html>
