@@ -114,6 +114,16 @@
     .split-divider:hover::after, .split-divider.dragging::after { background: var(--accent-blue); }
     body.resizing, body.resizing * { cursor: col-resize !important; user-select: none; }
     .split .email-list { padding: 1rem; min-height: 0; }
+    .list-col { display: flex; flex-direction: column; min-height: 0; }
+    .list-col .email-list { flex: 1; min-height: 0; }
+    .pager { padding: 0.6rem 1rem; border-top: 1px solid var(--border-color); background: white; }
+    .pager-row { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; justify-content: center; }
+    .pg { min-width: 32px; padding: 0.35rem 0.5rem; border: 1px solid var(--border-color); background: white; border-radius: 8px; cursor: pointer; color: var(--text-dark); }
+    .pg.on { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
+    .pg:disabled { opacity: 0.4; cursor: default; }
+    .pg-info { font-size: 0.8rem; color: var(--text-muted); margin-right: auto; }
+    .pg-size { padding: 0.35rem; border-radius: 8px; border: 1px solid var(--border-color); background: white; }
+    .pg-gap { color: var(--text-muted); padding: 0 0.2rem; }
     .reader-pane { overflow-y: auto; padding: 1.5rem 2rem; background: rgba(255, 255, 255, 0.75); border-left: 1px solid var(--border-color); min-width: 0; }
     .reader-pane .btn-row { justify-content: flex-start; }
 
@@ -224,7 +234,7 @@
           <input type="text" class="search-bar" id="searchInput" placeholder="Search vibes..." oninput="renderFolder()">
         </div>
         <div class="split">
-          <div class="email-list" id="emailList"></div>
+          <div class="list-col"><div class="email-list" id="emailList"></div><div class="pager" id="pager"></div></div>
           <div class="split-divider" id="splitDivider" title="Drag to resize"></div>
           <div class="reader-pane" id="readerPane">
             <h3 id="viewSubject" style="margin-bottom: 0.25rem;"></h3>
@@ -316,6 +326,16 @@
         <div id="accountList"></div>
         <button class="compose-btn secondary" style="margin-top: 0.5rem; padding: 0.5rem 0.9rem;" onclick="addAccount()">+ Add Gmail</button>
         <button class="compose-btn secondary" style="margin-top: 0.5rem; padding: 0.5rem 0.9rem;" onclick="addMicrosoftAccount()">+ Add Outlook</button>
+      </div>
+      <div class="form-group">
+        <label>Emails to load per folder (more means slower sync)</label>
+        <select id="settingSyncLimit" class="form-input">
+          <option value="100">100</option>
+          <option value="300">300</option>
+          <option value="500">500</option>
+          <option value="1000">1,000</option>
+          <option value="2000">2,000</option>
+        </select>
       </div>
       <div class="form-group">
         <label>Google OAuth Client ID</label>
@@ -459,6 +479,7 @@
       localStorage.setItem('chill_client_id', clientId);
       localStorage.setItem('chill_ms_client_id', document.getElementById('settingMsClientId').value.trim());
       msalApp = null;
+      localStorage.setItem('chill_sync_limit', document.getElementById('settingSyncLimit').value);
 
       document.getElementById('sidebarName').innerText = name;
       document.getElementById('sidebarAvatar').src = avatar;
@@ -476,6 +497,7 @@
       document.getElementById('settingName').value = name;
       document.getElementById('settingClientId').value = clientId || '';
       document.getElementById('settingMsClientId').value = localStorage.getItem('chill_ms_client_id') || '';
+      document.getElementById('settingSyncLimit').value = localStorage.getItem('chill_sync_limit') || '300';
       document.getElementById('avatarPreview').src = avatar;
       document.getElementById('sidebarName').innerText = name;
       document.getElementById('sidebarAvatar').src = avatar;
@@ -759,7 +781,8 @@
     async function graphApi(path, opts = {}) {
       const acc = activeAccount();
       const token = await getMsToken(acc.email, false);
-      const res = await fetch('https://graph.microsoft.com/v1.0/' + path, {
+      const url = path.startsWith('https://') ? path : 'https://graph.microsoft.com/v1.0/' + path;
+      const res = await fetch(url, {
         ...opts,
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers || {}) }
       });
@@ -779,10 +802,6 @@
       };
     }
 
-    async function syncOutlookFolder(folder) {
-      const d = await graphApi(`me/mailFolders/${MS_FOLDERS[folder]}/messages?$top=25&$select=id,subject,from,toRecipients,receivedDateTime,lastModifiedDateTime,bodyPreview`);
-      mailCache[folder] = (d.value || []).map(graphSummary);
-    }
 
     async function loadOutlookMessage(id) {
       const m = await graphApi(`me/messages/${id}?$select=body,hasAttachments`);
@@ -910,26 +929,68 @@
       };
     }
 
+
+
+    function setSyncStatus(text) {
+      document.getElementById('syncStatus').textContent = text;
+    }
+
+    const SYNC_LIMIT = () => Number(localStorage.getItem('chill_sync_limit')) || 300;
+
+    // Runs fn over items with at most `limit` requests in flight
+    async function mapLimit(items, limit, fn) {
+      const out = new Array(items.length);
+      let next = 0;
+      const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (next < items.length) {
+          const i = next++;
+          out[i] = await fn(items[i], i);
+        }
+      });
+      await Promise.all(workers);
+      return out;
+    }
+
     async function fetchSummaries(ids) {
-      const results = await Promise.allSettled(ids.map(id =>
+      const results = await mapLimit(ids, 8, id =>
         gmailApi(`messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`)
-          .then(summarize)));
-      return results.filter(r => r.status === 'fulfilled').map(r => r.value);
+          .then(summarize)
+          .catch(() => null));
+      return results.filter(Boolean);
+    }
+
+    // Follows Gmail's page tokens until we have `limit` items
+    async function gmailListAll(path, key, limit) {
+      const out = [];
+      let pageToken = '';
+      do {
+        const sep = path.includes('?') ? '&' : '?';
+        const d = await gmailApi(`${path}${sep}maxResults=${Math.min(100, limit - out.length)}${pageToken ? '&pageToken=' + pageToken : ''}`);
+        out.push(...(d[key] || []));
+        pageToken = d.nextPageToken || '';
+      } while (pageToken && out.length < limit);
+      return out.slice(0, limit);
     }
 
     async function syncFolder(folder) {
       if (activeProvider() === 'microsoft') return syncOutlookFolder(folder);
-      if (folder === 'drafts') {
-        const d = await gmailApi('drafts?maxResults=25');
-        mailCache.drafts = await fetchSummaries((d.drafts || []).map(x => x.message.id));
-      } else {
-        const l = await gmailApi(`messages?labelIds=${FOLDER_LABELS[folder]}&maxResults=25`);
-        mailCache[folder] = await fetchSummaries((l.messages || []).map(x => x.id));
-      }
+      const limit = SYNC_LIMIT();
+      const ids = folder === 'drafts'
+        ? (await gmailListAll('drafts', 'drafts', limit)).map(d => d.message.id)
+        : (await gmailListAll(`messages?labelIds=${FOLDER_LABELS[folder]}`, 'messages', limit)).map(m => m.id);
+      mailCache[folder] = await fetchSummaries(ids);
     }
 
-    function setSyncStatus(text) {
-      document.getElementById('syncStatus').textContent = text;
+    async function syncOutlookFolder(folder) {
+      const limit = SYNC_LIMIT();
+      let url = `me/mailFolders/${MS_FOLDERS[folder]}/messages?$top=${Math.min(100, limit)}&$select=id,subject,from,toRecipients,receivedDateTime,lastModifiedDateTime,bodyPreview`;
+      const items = [];
+      while (url && items.length < limit) {
+        const d = await graphApi(url);
+        items.push(...(d.value || []));
+        url = d['@odata.nextLink'] || '';
+      }
+      mailCache[folder] = items.slice(0, limit).map(graphSummary);
     }
 
     async function syncAll(interactive = false) {
@@ -957,47 +1018,6 @@
     }
 
     // ---------- Folder rendering ----------
-    function renderFolder() {
-      const list = document.getElementById('emailList');
-      const query = document.getElementById('searchInput').value.trim().toLowerCase();
-      let items;
-
-      if (currentFolder === 'scheduled') {
-        items = scheduled.map(s => ({ ...s.msg, id: s.id, date: s.sendAt, kind: 'scheduled' }));
-      } else if (currentFolder === 'drafts') {
-        items = [
-          ...localDrafts.map(d => ({ ...d.msg, id: d.id, date: d.updated, kind: 'local-draft' })),
-          ...(mailCache.drafts || []).map(x => ({ ...x, kind: 'gmail-draft' }))
-        ];
-      } else {
-        items = (mailCache[currentFolder] || []).map(x => ({ ...x, kind: 'mail' }));
-      }
-
-      items = items
-        .filter(i => !query || [i.subject, i.from, i.to, i.snippet, i.body].some(v => (v || '').toLowerCase().includes(query)))
-        .sort((a, b) => b.date - a.date);
-
-      if (!items.length) {
-        const hint = currentFolder === 'scheduled' ? 'Nothing scheduled.' :
-          currentFolder === 'drafts' ? 'No drafts yet.' : 'Nothing here yet. Click Sync to load your mail.';
-        list.innerHTML = `<p class="empty-state">${hint}</p>`;
-        return;
-      }
-
-      list.innerHTML = items.map(i => {
-        const who = currentFolder === 'sent' || i.kind === 'scheduled' || i.kind === 'local-draft' ? `To: ${i.to || '(no recipient)'}` : i.from;
-        const tag = i.kind === 'scheduled' ? '<span class="tag">Scheduled</span>' : i.kind === 'local-draft' ? '<span class="tag">Draft</span>' : '';
-        return `
-          <div class="email-card" onclick="openItem('${i.kind}', '${esc(i.id)}')">
-            <div style="min-width: 0;">
-              <h4>${esc(i.subject || '(no subject)')}${tag}</h4>
-              <div style="font-size: 0.85rem; color: var(--text-muted);">${esc(who)}</div>
-              <div class="snippet">${esc(i.snippet || i.body || '')}</div>
-            </div>
-            <span class="meta">${esc(fmtDate(i.date))}</span>
-          </div>`;
-      }).join('');
-    }
 
     // ---------- Full message viewing (inside Chillmail) ----------
     const bodyCache = {};
@@ -1880,6 +1900,109 @@
     }
 
     initSplitDivider();
+
+    let pageSize = Number(localStorage.getItem('chill_page_size')) || 20;
+    let currentPage = 1;
+    let pagerFolder = null;
+    let pagerQuery = null;
+
+    function renderFolder() {
+      const list = document.getElementById('emailList');
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      if (pagerFolder !== currentFolder || pagerQuery !== query) {
+        currentPage = 1;
+        pagerFolder = currentFolder;
+        pagerQuery = query;
+      }
+
+      let items;
+      if (currentFolder === 'scheduled') {
+        items = scheduled.map(s => ({ ...s.msg, id: s.id, date: s.sendAt, kind: 'scheduled' }));
+      } else if (currentFolder === 'drafts') {
+        items = [
+          ...localDrafts.map(d => ({ ...d.msg, id: d.id, date: d.updated, kind: 'local-draft' })),
+          ...(mailCache.drafts || []).map(x => ({ ...x, kind: 'gmail-draft' }))
+        ];
+      } else {
+        items = (mailCache[currentFolder] || []).map(x => ({ ...x, kind: 'mail' }));
+      }
+
+      items = items
+        .filter(i => !query || [i.subject, i.from, i.to, i.snippet, i.body].some(v => (v || '').toLowerCase().includes(query)))
+        .sort((a, b) => b.date - a.date);
+
+      const total = items.length;
+      if (!total) {
+        const hint = currentFolder === 'scheduled' ? 'Nothing scheduled.' :
+          currentFolder === 'drafts' ? 'No drafts yet.' : 'Nothing here yet. Click Sync to load your mail.';
+        list.innerHTML = `<p class="empty-state">${hint}</p>`;
+        renderPager(0, 0, 1, 0);
+        return;
+      }
+
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      const start = (currentPage - 1) * pageSize;
+      const visible = items.slice(start, start + pageSize);
+
+      list.innerHTML = visible.map(i => {
+        const who = currentFolder === 'sent' || i.kind === 'scheduled' || i.kind === 'local-draft' ? `To: ${i.to || '(no recipient)'}` : i.from;
+        const tag = i.kind === 'scheduled' ? '<span class="tag">Scheduled</span>' : i.kind === 'local-draft' ? '<span class="tag">Draft</span>' : '';
+        return `
+          <div class="email-card" onclick="openItem('${i.kind}', '${esc(i.id)}')">
+            <div style="min-width: 0;">
+              <h4>${esc(i.subject || '(no subject)')}${tag}</h4>
+              <div style="font-size: 0.85rem; color: var(--text-muted);">${esc(who)}</div>
+              <div class="snippet">${esc(i.snippet || i.body || '')}</div>
+            </div>
+            <span class="meta">${esc(fmtDate(i.date))}</span>
+          </div>`;
+      }).join('');
+
+      renderPager(start + 1, Math.min(start + pageSize, total), pages, total);
+    }
+
+    function renderPager(from, to, pages, total) {
+      const el = document.getElementById('pager');
+      if (!total) { el.innerHTML = ''; return; }
+      const cur = currentPage;
+
+      // Page numbers: first, last, and a window around the current page
+      const nums = new Set([1, pages]);
+      for (let n = cur - 2; n <= cur + 2; n++) if (n >= 1 && n <= pages) nums.add(n);
+      let numbers = '';
+      let prev = 0;
+      [...nums].sort((a, b) => a - b).forEach(n => {
+        if (n - prev > 1) numbers += '<span class="pg-gap">…</span>';
+        numbers += `<button class="pg ${n === cur ? 'on' : ''}" onclick="goPage(${n})">${n}</button>`;
+        prev = n;
+      });
+
+      const sizes = [10, 20, 30, 40, 50, 100]
+        .map(n => `<option value="${n}" ${n === pageSize ? 'selected' : ''}>${n} per page</option>`).join('');
+
+      el.innerHTML = `
+        <div class="pager-row">
+          <span class="pg-info">${from}–${to} of ${total}</span>
+          <select class="pg-size" onchange="setPageSize(this.value)">${sizes}</select>
+          <button class="pg" ${cur <= 1 ? 'disabled' : ''} onclick="goPage(${cur - 1})">‹</button>
+          ${numbers}
+          <button class="pg" ${cur >= pages ? 'disabled' : ''} onclick="goPage(${cur + 1})">›</button>
+        </div>`;
+    }
+
+    function goPage(n) {
+      currentPage = n;
+      renderFolder();
+      document.getElementById('emailList').scrollTop = 0;
+    }
+
+    function setPageSize(n) {
+      pageSize = Number(n);
+      localStorage.setItem('chill_page_size', String(pageSize));
+      currentPage = 1;
+      renderFolder();
+    }
 
     // ---------- Startup ----------
     window.addEventListener('load', () => {
