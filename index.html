@@ -108,7 +108,11 @@
     .mail-frame { width: 100%; min-height: 240px; border: 1px solid var(--border-color); border-radius: 10px; background: #fff; }
 
     /* Split view: list on the left, message on the right */
-    .split { flex: 1; display: grid; grid-template-columns: minmax(280px, 380px) 1fr; min-height: 0; }
+    .split { flex: 1; display: grid; grid-template-columns: var(--list-w, 340px) 8px 1fr; min-height: 0; }
+    .split-divider { cursor: col-resize; background: transparent; position: relative; }
+    .split-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: var(--border-color); transition: background 0.15s; }
+    .split-divider:hover::after, .split-divider.dragging::after { background: var(--accent-blue); }
+    body.resizing, body.resizing * { cursor: col-resize !important; user-select: none; }
     .split .email-list { padding: 1rem; min-height: 0; }
     .reader-pane { overflow-y: auto; padding: 1.5rem 2rem; background: rgba(255, 255, 255, 0.75); border-left: 1px solid var(--border-color); min-width: 0; }
     .reader-pane .btn-row { justify-content: flex-start; }
@@ -221,6 +225,7 @@
         </div>
         <div class="split">
           <div class="email-list" id="emailList"></div>
+          <div class="split-divider" id="splitDivider" title="Drag to resize"></div>
           <div class="reader-pane" id="readerPane">
             <h3 id="viewSubject" style="margin-bottom: 0.25rem;"></h3>
             <p id="viewMeta" style="color: var(--text-muted); font-size: 0.9rem;"></p>
@@ -1819,6 +1824,62 @@
       renderFolder();
       notify('Moved back to Drafts');
     }
+
+    // ---------- Adjustable split view ----------
+    const SPLIT_MIN = 220;   // narrowest list
+    const SPLIT_MIN_READER = 320;
+
+    function setSplitWidth(px) {
+      const split = document.querySelector('.split');
+      const max = split.clientWidth - SPLIT_MIN_READER - 8;
+      const w = Math.max(SPLIT_MIN, Math.min(px, max));
+      split.style.setProperty('--list-w', w + 'px');
+      return w;
+    }
+
+    function initSplitDivider() {
+      const divider = document.getElementById('splitDivider');
+      const saved = Number(localStorage.getItem('chill_split_w'));
+      // Apply directly: the inbox may still be hidden here, so its width can't be measured yet
+      if (saved) document.querySelector('.split').style.setProperty('--list-w', saved + 'px');
+
+      const start = e => {
+        e.preventDefault();
+        const split = document.querySelector('.split');
+        const left = split.getBoundingClientRect().left;
+        divider.classList.add('dragging');
+        document.body.classList.add('resizing');
+        const move = ev => {
+          const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - left;
+          setSplitWidth(x);
+        };
+        const end = () => {
+          divider.classList.remove('dragging');
+          document.body.classList.remove('resizing');
+          window.removeEventListener('mousemove', move);
+          window.removeEventListener('mouseup', end);
+          window.removeEventListener('touchmove', move);
+          window.removeEventListener('touchend', end);
+          const w = parseInt(document.querySelector('.split').style.getPropertyValue('--list-w'), 10);
+          if (w) localStorage.setItem('chill_split_w', String(w));
+        };
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', end);
+        window.addEventListener('touchmove', move, { passive: false });
+        window.addEventListener('touchend', end);
+      };
+
+      divider.addEventListener('mousedown', start);
+      divider.addEventListener('touchstart', start, { passive: false });
+
+      // Keep the panes sensible if the window is resized
+      window.addEventListener('resize', () => {
+        const current = parseInt(document.querySelector('.split').style.getPropertyValue('--list-w'), 10);
+        if (current) setSplitWidth(current);
+      });
+    }
+
+    initSplitDivider();
 
     // ---------- Startup ----------
     window.addEventListener('load', () => {
