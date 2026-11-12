@@ -251,6 +251,44 @@
     .bulk-actions .pg:disabled { opacity: 0.4; cursor: default; }
     .sel-box { width: 18px; height: 18px; margin-top: 0.2rem; flex-shrink: 0; accent-color: var(--accent-blue); cursor: pointer; }
 
+    /* Filters */
+    .filter-panel { display: flex; gap: 0.5rem; flex-wrap: wrap; padding: 0.6rem 1rem; border-bottom: 1px solid var(--border-color); background: white; align-items: center; }
+    .filter-panel .form-input { width: auto; min-width: 140px; padding: 0.45rem 0.6rem; }
+
+    /* List on the right */
+    body.list-right .split { grid-template-columns: 1fr 8px var(--list-w, 340px); }
+    body.list-right .list-col { order: 3; }
+    body.list-right .split-divider { order: 2; }
+    body.list-right .reader-pane { order: 1; border-left: none; border-right: 1px solid var(--border-color); }
+    body.is-phone.list-right .split { grid-template-columns: 1fr; }
+
+    /* Tutorial */
+    .tour { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); align-items: center; justify-content: center; z-index: 900; padding: 1rem; }
+    .tour:not([style*="none"]) { display: flex; }
+    .tour-card { background: white; border-radius: 18px; padding: 1.5rem; width: min(440px, 100%); box-shadow: var(--shadow-md); animation: slideUp 0.3s ease; }
+    .tour-step { font-size: 0.8rem; color: var(--text-muted); }
+
+    /* Penguin */
+    .penguin { position: fixed; left: 1rem; bottom: 1rem; z-index: 380; pointer-events: none; transform: translateY(150%); transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+    .penguin.show { transform: translateY(0); pointer-events: auto; }
+    .penguin .peng-body { position: relative; cursor: pointer; display: inline-block; }
+    .penguin .flip { transform-box: fill-box; transform-origin: 50% 0%; }
+    .penguin.wave .flip-r { animation: wave 0.35s ease-in-out 4; }
+    .penguin.hop .peng-body { animation: hop 0.6s ease 3; }
+    .penguin.spin .peng-body { animation: spin 1s ease; }
+    .penguin.sleep .peng-body svg { transform: rotate(-14deg); transition: transform 0.6s; }
+    .penguin .zzz { display: none; position: absolute; top: -8px; right: -14px; font-weight: 700; color: var(--accent-blue); }
+    .penguin.sleep .zzz { display: block; animation: floaty 1.6s ease-in-out infinite; }
+    .penguin.walk .peng-body { animation: walk 6s ease-in-out; }
+    .peng-bubble { position: absolute; bottom: 100px; left: 0; background: white; border: 1px solid var(--border-color); padding: 0.45rem 0.7rem; border-radius: 12px; font-size: 0.8rem; box-shadow: var(--shadow-md); max-width: 200px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+    .peng-bubble.on { opacity: 1; }
+    body.no-penguin #penguin { display: none; }
+    @keyframes wave { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-35deg); } }
+    @keyframes hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-22px); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes floaty { 0%, 100% { transform: translateY(0); opacity: 1; } 50% { transform: translateY(-6px); opacity: 0.5; } }
+    @keyframes walk { 0% { transform: translateX(0) scaleX(1); } 45% { transform: translateX(60vw) scaleX(1); } 50% { transform: translateX(60vw) scaleX(-1); } 95% { transform: translateX(0) scaleX(-1); } 100% { transform: translateX(0) scaleX(1); } }
+
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
   </style>
@@ -319,7 +357,15 @@
             <button class="sync-btn" onclick="syncAll(true)"><i class="fa-solid fa-rotate"></i> Sync</button>
             <span class="sync-status" id="syncStatus"></span>
           </div>
+          <button class="sync-btn" onclick="toggleFilters()"><i class="fa-solid fa-filter"></i> Filters</button>
           <input type="text" class="search-bar" id="searchInput" placeholder="Search vibes..." oninput="renderFolder()">
+        </div>
+        <div id="filterPanel" class="filter-panel" style="display: none;">
+          <input type="text" class="form-input" id="fFrom" placeholder="From or to contains" oninput="setFilters()">
+          <input type="text" class="form-input" id="fSubject" placeholder="Subject contains" oninput="setFilters()">
+          <input type="date" class="form-input" id="fAfter" title="After this date" onchange="setFilters()">
+          <input type="date" class="form-input" id="fBefore" title="Before this date" onchange="setFilters()">
+          <button class="pg" onclick="clearFilters()">Clear</button>
         </div>
         <div class="split">
           <div class="list-col"><div class="bulk-bar" id="bulkBar"></div><div class="email-list" id="emailList"></div><div class="pager" id="pager"></div></div>
@@ -419,6 +465,52 @@
         </select>
       </div>
       <div class="form-group">
+        <label>Message list</label>
+        <select id="uiListSide" class="form-input" onchange="saveUI()">
+          <option value="left">On the left (default)</option>
+          <option value="right">On the right</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Sounds</label>
+        <select id="uiSound" class="form-input" onchange="saveUI()">
+          <option value="off">Off (default)</option>
+          <option value="click">Click</option>
+          <option value="pop">Pop</option>
+          <option value="chime">Chime</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>New mail alerts (in app)</label>
+        <select id="uiNotify" class="form-input" onchange="saveUI()">
+          <option value="on">On (default)</option>
+          <option value="off">Off</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Desktop notifications</label>
+        <select id="uiDesktop" class="form-input" onchange="saveUI()">
+          <option value="off">Off (default)</option>
+          <option value="on">On (asks your browser for permission)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Penguin</label>
+        <select id="uiPenguin" class="form-input" onchange="saveUI()">
+          <option value="on">Visible (default)</option>
+          <option value="off">Off</option>
+        </select>
+        <select id="uiPenguinFreq" class="form-input" style="margin-top: 0.4rem;" onchange="saveUI()">
+          <option value="often">Often</option>
+          <option value="sometimes">Sometimes (default)</option>
+          <option value="rare">Rarely</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Help</label>
+        <button class="compose-btn secondary" style="padding: 0.5rem 0.9rem;" onclick="startTour()">Replay tutorial</button>
+      </div>
+      <div class="form-group">
         <label>Font</label>
         <select id="uiFont" class="form-input" onchange="saveUI()">
           <option value="inter">Inter (default)</option>
@@ -506,6 +598,16 @@
       </div>
       <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">Google sign-in is built in.</p>
       <div class="form-group">
+        <label>Email rules (applied to new mail)</label>
+        <div id="rulesList"></div>
+        <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.5rem;">
+          <select id="ruleField" class="pg-size"><option value="from">From contains</option><option value="subject">Subject contains</option></select>
+          <input type="text" id="ruleMatch" class="form-input" placeholder="e.g. newsletter" style="flex: 1; min-width: 120px;">
+          <select id="ruleAction" class="pg-size"><option value="read">Mark as read</option><option value="spam">Move to Spam</option><option value="bin">Move to Bin</option></select>
+          <button class="compose-btn" style="padding: 0.5rem 0.8rem;" onclick="addRule()">Add rule</button>
+        </div>
+      </div>
+      <div class="form-group">
         <label>Microsoft (Outlook) Client ID</label>
         <input type="text" id="settingMsClientId" class="form-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
       </div>
@@ -538,6 +640,39 @@
   </div>
 
   <!-- Compose windows -->
+  <div id="penguin" class="penguin" aria-hidden="true">
+    <div class="peng-bubble" id="pengBubble"></div>
+    <div class="peng-body" onclick="pengSay()">
+      <svg viewBox="0 0 80 100" width="72" height="90">
+        <ellipse class="flip flip-l" cx="12" cy="58" rx="7" ry="20" fill="#1e293b"/>
+        <ellipse class="flip flip-r" cx="68" cy="58" rx="7" ry="20" fill="#1e293b"/>
+        <ellipse cx="40" cy="56" rx="28" ry="38" fill="#1e293b"/>
+        <ellipse cx="40" cy="66" rx="18" ry="27" fill="#ffffff"/>
+        <circle cx="31" cy="38" r="7" fill="#ffffff"/><circle cx="49" cy="38" r="7" fill="#ffffff"/>
+        <circle cx="32" cy="39" r="3.5" fill="#0f172a"/><circle cx="50" cy="39" r="3.5" fill="#0f172a"/>
+        <circle cx="24" cy="50" r="3.5" fill="#fca5a5" opacity="0.7"/><circle cx="56" cy="50" r="3.5" fill="#fca5a5" opacity="0.7"/>
+        <polygon points="36,46 44,46 40,54" fill="#f59e0b"/>
+        <ellipse cx="31" cy="94" rx="8" ry="4" fill="#f59e0b"/><ellipse cx="49" cy="94" rx="8" ry="4" fill="#f59e0b"/>
+      </svg>
+      <span class="zzz">z z</span>
+    </div>
+  </div>
+
+  <div id="tutorial" class="tour" style="display: none;" role="dialog" aria-modal="true">
+    <div class="tour-card">
+      <div class="tour-step" id="tourStep"></div>
+      <h3 id="tourTitle"></h3>
+      <p id="tourText" style="margin-top: 0.5rem; line-height: 1.6;"></p>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.25rem; gap: 0.5rem;">
+        <button class="compose-btn secondary" onclick="endTour()">Skip tutorial</button>
+        <span style="display: flex; gap: 0.5rem;">
+          <button class="compose-btn secondary" id="tourBack" onclick="tourStep(-1)">Back</button>
+          <button class="compose-btn" id="tourNext" onclick="tourStep(1)">Next</button>
+        </span>
+      </div>
+    </div>
+  </div>
+
   <div id="composeDock"></div>
 
 
@@ -1217,6 +1352,7 @@
         }
         mailCache.lastSync = Date.now();
         localStorage.setItem(cacheKey(), JSON.stringify(mailCache));
+        handleNewMail();
         setSyncStatus(failed.length ? `Synced with ${failed.length} error(s)` : `Synced ${new Date().toLocaleTimeString([], { timeStyle: 'short' })}`);
         renderFolder();
       } catch (err) {
@@ -1447,8 +1583,8 @@
 
 
     // ---------- Personalisation options ----------
-    const UI_DEFAULTS = { font: 'inter', radius: 'soft', density: 'comfortable', motion: 'full', layout: 'auto', textSize: 'default', snippets: 'on', shadow: 'soft', pane: 'frosted' };
-    const UI_SELECTS = { font: 'uiFont', radius: 'uiRadius', density: 'uiDensity', motion: 'uiMotion', layout: 'uiLayout', textSize: 'uiText', snippets: 'uiSnippets', shadow: 'uiShadow', pane: 'uiPane' };
+    const UI_DEFAULTS = { font: 'inter', radius: 'soft', density: 'comfortable', motion: 'full', layout: 'auto', textSize: 'default', snippets: 'on', shadow: 'soft', pane: 'frosted', listSide: 'left', sound: 'off', notify: 'on', desktop: 'off', penguin: 'on', penguinFreq: 'sometimes' };
+    const UI_SELECTS = { font: 'uiFont', radius: 'uiRadius', density: 'uiDensity', motion: 'uiMotion', layout: 'uiLayout', textSize: 'uiText', snippets: 'uiSnippets', shadow: 'uiShadow', pane: 'uiPane', listSide: 'uiListSide', sound: 'uiSound', notify: 'uiNotify', desktop: 'uiDesktop', penguin: 'uiPenguin', penguinFreq: 'uiPenguinFreq' };
     const phoneQuery = window.matchMedia('(max-aspect-ratio: 1/1)');
 
     function loadUI() {
@@ -1470,9 +1606,11 @@
       if (ui.textSize === 'large') document.documentElement.classList.add('text-large');
 
       const b = document.body.classList;
-      b.remove('r-soft', 'r-sharp', 'r-round', 'd-comfortable', 'd-compact', 'm-full', 'm-reduced', 'm-off', 'no-snippets', 'shadow-none', 'shadow-strong', 'pane-clear', 'pane-solid', 'pane-frosted');
+      b.remove('r-soft', 'r-sharp', 'r-round', 'd-comfortable', 'd-compact', 'm-full', 'm-reduced', 'm-off', 'no-snippets', 'shadow-none', 'shadow-strong', 'pane-clear', 'pane-solid', 'pane-frosted', 'no-penguin', 'list-right');
       b.add('r-' + ui.radius, 'd-' + ui.density, 'm-' + ui.motion, 'pane-' + ui.pane);
       if (ui.snippets === 'off') b.add('no-snippets');
+      if (ui.listSide === 'right') b.add('list-right');
+      if (ui.penguin === 'off') b.add('no-penguin');
       if (ui.shadow === 'none') b.add('shadow-none');
       if (ui.shadow === 'strong') b.add('shadow-strong');
 
@@ -1952,6 +2090,7 @@
         cleanupFiles(job.msg.files);
         removeLocalDraft(job.draftId);
         notify(`Sent: ${job.msg.subject || '(no subject)'}`);
+        playSound();
         syncFolder('sent').then(() => renderFolder()).catch(() => {});
       } catch (err) {
         restoreDraft(job.msg, `Could not send: ${err.message}`, job.draftId);
@@ -2081,8 +2220,9 @@
         divider.classList.add('dragging');
         document.body.classList.add('resizing');
         const move = ev => {
-          const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - left;
-          setSplitWidth(x);
+          const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+          const right = split.getBoundingClientRect().right;
+          setSplitWidth(document.body.classList.contains('list-right') ? right - cx : cx - left);
         };
         const end = () => {
           divider.classList.remove('dragging');
@@ -2247,6 +2387,7 @@
       items = items
         .filter(i => !query || [i.subject, i.from, i.to, i.snippet, i.body].some(v => (v || '').toLowerCase().includes(query)))
         .sort((a, b) => b.date - a.date);
+      items = applyAdvancedFilters(items);
 
       if (!items.length) {
         const hint = currentFolder === 'scheduled' ? 'Nothing scheduled.' :
@@ -2613,6 +2754,267 @@
       renderFolder();
     }
 
+    // ---------- Sounds ----------
+    let audioCtx = null;
+    function playSound(name = loadUI().sound) {
+      if (!name || name === 'off') return;
+      try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+      const t = audioCtx.currentTime;
+      const tone = (freq, at, dur, type, vol, slideTo) => {
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = type;
+        o.frequency.setValueAtTime(freq, t + at);
+        if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + at + dur);
+        g.gain.setValueAtTime(vol, t + at);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+        o.connect(g).connect(audioCtx.destination);
+        o.start(t + at);
+        o.stop(t + at + dur);
+      };
+      if (name === 'click') tone(1800, 0, 0.04, 'square', 0.04);
+      if (name === 'pop') tone(500, 0, 0.12, 'sine', 0.2, 1100);
+      if (name === 'chime') { tone(880, 0, 0.5, 'sine', 0.15); tone(1320, 0.12, 0.6, 'sine', 0.12); }
+    }
+
+    // Button presses make a click when that sound is chosen
+    document.addEventListener('click', e => {
+      if (e.target.closest('.compose-btn, .sync-btn, .pg, .nav-item, .bulk-actions button, .group-head, .tour button')) {
+        const sound = loadUI().sound;
+        if (sound === 'click') playSound('click');
+      }
+    }, true);
+
+    // ---------- Notifications ----------
+    function handleNewMail() {
+      const inbox = mailCache.inbox || [];
+      const known = JSON.parse(localStorage.getItem('chill_known_inbox') || 'null');
+      localStorage.setItem('chill_known_inbox', JSON.stringify(inbox.map(m => m.id).slice(0, 3000)));
+      if (!known) return; // first sync: nothing is "new" yet
+      const fresh = inbox.filter(m => !known.includes(m.id));
+      if (!fresh.length) return;
+
+      applyRules(fresh);
+      const ui = loadUI();
+      const text = `${fresh.length} new email${fresh.length === 1 ? '' : 's'}`;
+      if (ui.notify === 'on') notify(`📬 ${text}`, 4000);
+      if (ui.sound !== 'off') playSound(ui.sound);
+      if (ui.desktop === 'on' && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification('Chillmail', { body: `${text}: ${fresh[0].subject || '(no subject)'}` });
+      }
+    }
+
+    // ---------- Email rules ----------
+    function loadRules() {
+      try { return JSON.parse(localStorage.getItem('chill_rules') || '[]'); } catch { return []; }
+    }
+
+    function renderRules() {
+      const box = document.getElementById('rulesList');
+      if (!box) return;
+      const rules = loadRules();
+      const actionName = { read: 'mark as read', spam: 'move to Spam', bin: 'move to Bin' };
+      box.innerHTML = rules.length ? rules.map(r => `
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 0.3rem;">
+          <span style="font-size: 0.9rem;">${esc(r.field === 'from' ? 'From' : 'Subject')} contains "${esc(r.match)}" → ${actionName[r.action]}</span>
+          <button class="sync-btn" style="color: #ef4444;" onclick="removeRule('${r.id}')">Remove</button>
+        </div>`).join('') : '<p style="color: var(--text-muted); font-size: 0.9rem;">No rules yet.</p>';
+    }
+
+    function addRule() {
+      const match = document.getElementById('ruleMatch').value.trim();
+      if (!match) { alert('Type some text for the rule to look for.'); return; }
+      const rules = loadRules();
+      rules.push({ id: String(Date.now() + Math.random()), field: document.getElementById('ruleField').value, match, action: document.getElementById('ruleAction').value });
+      localStorage.setItem('chill_rules', JSON.stringify(rules));
+      document.getElementById('ruleMatch').value = '';
+      renderRules();
+    }
+
+    function removeRule(id) {
+      localStorage.setItem('chill_rules', JSON.stringify(loadRules().filter(r => r.id !== id)));
+      renderRules();
+    }
+
+    async function serverBulk(action, ids) {
+      if (!ids.length) return;
+      if (activeProvider() === 'microsoft') {
+        const folderFor = { bin: 'deleteditems', spam: 'junkemail' };
+        if (action === 'read') {
+          await mapLimit(ids, 4, id => graphApi(`me/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead: true }) }));
+        } else {
+          await mapLimit(ids, 4, id => graphApi(`me/messages/${id}/move`, { method: 'POST', body: JSON.stringify({ destinationId: folderFor[action] }) }));
+        }
+      } else {
+        const change = {
+          read: { removeLabelIds: ['UNREAD'] },
+          spam: { addLabelIds: ['SPAM'], removeLabelIds: ['INBOX'] },
+          bin: { addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] }
+        }[action];
+        for (let i = 0; i < ids.length; i += 500) {
+          await gmailApi('messages/batchModify', { method: 'POST', body: JSON.stringify({ ids: ids.slice(i, i + 500), ...change }) });
+        }
+      }
+    }
+
+    async function applyRules(emails) {
+      const rules = loadRules();
+      if (!rules.length) return;
+      const byAction = {};
+      emails.forEach(m => {
+        const rule = rules.find(r => (r.field === 'from' ? m.from : m.subject || '').toLowerCase().includes(r.match.toLowerCase()));
+        if (rule) (byAction[rule.action] = byAction[rule.action] || []).push(m.id);
+      });
+      let count = 0;
+      for (const [action, ids] of Object.entries(byAction)) {
+        try {
+          await serverBulk(action, ids);
+          count += ids.length;
+          if (action === 'read') {
+            ids.forEach(id => { const m = findMail(id); if (m) m.unread = false; readSet.add(id); });
+          } else {
+            mailCache.inbox = (mailCache.inbox || []).filter(m => !ids.includes(m.id));
+          }
+        } catch (err) { notify(`A rule couldn't run: ${err.message}`, 6000); }
+      }
+      if (count) {
+        localStorage.setItem('chill_read', JSON.stringify([...readSet]));
+        localStorage.setItem(cacheKey(), JSON.stringify(mailCache));
+        notify(`Rules handled ${count} email${count === 1 ? '' : 's'}`);
+        renderFolder();
+      }
+    }
+
+    // ---------- Filters ----------
+    let advFilters = { from: '', subject: '', after: '', before: '' };
+
+    function toggleFilters() {
+      const p = document.getElementById('filterPanel');
+      p.style.display = p.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    function setFilters() {
+      advFilters = {
+        from: document.getElementById('fFrom').value.trim(),
+        subject: document.getElementById('fSubject').value.trim(),
+        after: document.getElementById('fAfter').value,
+        before: document.getElementById('fBefore').value
+      };
+      renderFolder();
+    }
+
+    function clearFilters() {
+      ['fFrom', 'fSubject', 'fAfter', 'fBefore'].forEach(id => { document.getElementById(id).value = ''; });
+      setFilters();
+    }
+
+    function applyAdvancedFilters(items) {
+      const f = advFilters;
+      return items.filter(i => {
+        if (f.from && !((i.from || '') + ' ' + (i.to || '')).toLowerCase().includes(f.from.toLowerCase())) return false;
+        if (f.subject && !(i.subject || '').toLowerCase().includes(f.subject.toLowerCase())) return false;
+        if (f.after && i.date < new Date(f.after).getTime()) return false;
+        if (f.before && i.date > new Date(f.before).getTime() + 86400000) return false;
+        return true;
+      });
+    }
+
+    // ---------- Tutorial ----------
+    const TOUR = [
+      { title: 'Welcome to Chillmail', text: 'A calm, browser-based email app. This quick tour shows you the main parts. You can skip it at any time and replay it from Personalise.' },
+      { title: 'Accounts', text: 'Open Settings to add a Gmail or Outlook account. Chillmail shows the account you are using under the logo in the sidebar, and you can switch accounts in Settings.' },
+      { title: 'The sidebar', text: 'Inbox, Sent, Drafts, Scheduled, Spam, Bin and Contacts. Personalise and Settings are at the bottom. Press Sync to fetch new mail.' },
+      { title: 'Writing email', text: 'Press Compose to open a message window in the bottom right. You can open several at once. Drafts save as you type. Use – to shrink a window and ✕ to close it (the draft stays in Drafts).' },
+      { title: 'Reading and selecting', text: 'Click an email to read it on the right (or left, if you choose). Drag the thin divider to resize. Tick the boxes to select several emails, then mark them read or unread, move them to Spam, or delete them.' },
+      { title: 'Unread and read', text: 'Emails are grouped into Unread and Everything else, like Gmail. Click a heading to open or close it. Opening an email marks it read; use Mark as unread to change it back.' },
+      { title: 'Filters and rules', text: 'Press Filters to search by sender, subject or date. In Settings, email rules can automatically mark mail as read or move it to Spam or Bin when new mail arrives.' },
+      { title: 'Make it yours', text: 'Personalise changes colours, the background, the logo, fonts, corners, density, animations, the list side, sounds, new mail alerts and the penguin.' },
+      { title: 'On a phone', text: 'On a narrow screen, tap the snowflake to open the menu. Tap an email to read it, and use Back to return to the list.' }
+    ];
+    let tourIndex = 0;
+
+    function startTour() {
+      tourIndex = 0;
+      document.getElementById('tutorial').style.display = 'flex';
+      renderTour();
+    }
+
+    function renderTour() {
+      const step = TOUR[tourIndex];
+      document.getElementById('tourStep').textContent = `Step ${tourIndex + 1} of ${TOUR.length}`;
+      document.getElementById('tourTitle').textContent = step.title;
+      document.getElementById('tourText').textContent = step.text;
+      document.getElementById('tourBack').style.visibility = tourIndex ? 'visible' : 'hidden';
+      document.getElementById('tourNext').textContent = tourIndex === TOUR.length - 1 ? 'Finish' : 'Next';
+    }
+
+    function tourStep(d) {
+      if (tourIndex + d >= TOUR.length) { endTour(); return; }
+      tourIndex = Math.max(0, tourIndex + d);
+      renderTour();
+    }
+
+    function endTour() {
+      document.getElementById('tutorial').style.display = 'none';
+      localStorage.setItem('chill_tutorial_done', '1');
+    }
+
+    // ---------- Penguin ----------
+    const PENG_LINES = [
+      'Stay chill ❄',
+      'Inbox zero is a myth, but a nice one.',
+      'Did you drink some water today?',
+      'Waddle waddle.',
+      'I found a fish in the Spam folder. Don\'t ask.',
+      'Don\'t forget to reply to that one!',
+      'Psst, try the Filters button.'
+    ];
+    const PENG_FREQ = { often: [60000, 120000], sometimes: [180000, 360000], rare: [600000, 1200000] };
+    let pengTimer = null;
+
+    function pengSay(text) {
+      const b = document.getElementById('pengBubble');
+      b.textContent = text || PENG_LINES[Math.floor(Math.random() * PENG_LINES.length)];
+      b.classList.add('on');
+      clearTimeout(pengSay.timer);
+      pengSay.timer = setTimeout(() => b.classList.remove('on'), 3500);
+    }
+
+    function schedulePenguin() {
+      clearTimeout(pengTimer);
+      const ui = loadUI();
+      if (ui.penguin === 'off') return;
+      const [a, b] = PENG_FREQ[ui.penguinFreq] || PENG_FREQ.sometimes;
+      pengTimer = setTimeout(runPenguin, a + Math.random() * (b - a));
+    }
+
+    function runPenguin() {
+      if (loadUI().penguin === 'off') return;
+      const p = document.getElementById('penguin');
+      const acts = ['wave', 'hop', 'spin', 'sleep', 'walk'];
+      const act = acts[Math.floor(Math.random() * acts.length)];
+      p.className = 'penguin show ' + act;
+      if (Math.random() < 0.7) pengSay();
+      const duration = { wave: 2000, hop: 2000, spin: 1200, sleep: 4500, walk: 6200 }[act];
+      setTimeout(() => { p.className = 'penguin'; schedulePenguin(); }, duration);
+    }
+
+    function initExtras() {
+      renderRules();
+      document.body.classList.toggle('no-penguin', loadUI().penguin === 'off');
+      schedulePenguin();
+      if (!localStorage.getItem('chill_tutorial_done')) setTimeout(startTour, 800);
+      document.addEventListener('change', e => {
+        if (e.target.id === 'uiDesktop' && e.target.value === 'on' && 'Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission();
+        }
+        if (e.target.id && e.target.id.startsWith('ui')) schedulePenguin();
+      });
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && document.getElementById('tutorial').style.display === 'flex') endTour();
+      });
+    }
+
     // ---------- Startup ----------
     window.addEventListener('load', () => {
       setTimeout(() => {
@@ -2624,6 +3026,7 @@
       loadSettings();
       applyLogo();
       applyUI();
+      initExtras();
       loadCacheForActive();
       renderFolder();
       migrateLegacyToken().then(() => {
