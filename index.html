@@ -11,6 +11,7 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <style>
     :root {
+      --app-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       --bg-start: #e0f2fe;
       --bg-end: #f0f9ff;
       --accent-blue: #0284c7;
@@ -25,7 +26,7 @@
       --shadow-md: 0 10px 15px -3px color-mix(in srgb, var(--accent-blue) 12%, transparent), 0 4px 6px -4px color-mix(in srgb, var(--accent-blue) 6%, transparent);
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--app-font); }
 
     body { background-image: var(--bg-image, none), var(--bg-gradient); background-size: cover, cover; background-position: center; background-attachment: fixed; color: var(--text-dark); height: 100vh; display: flex; overflow: hidden; }
 
@@ -169,6 +170,34 @@
     .email-card.unread { border-left: 3px solid var(--accent-blue); }
     .email-card.unread h4 { font-weight: 700; }
 
+    /* Personalisation: corners, density, motion */
+    body.r-sharp .email-card, body.r-sharp .compose-float-win, body.r-sharp .modal-body, body.r-sharp .contact-card, body.r-sharp .suggest-row, body.r-sharp .auth-card, body.r-sharp .compose-btn, body.r-sharp .sync-btn, body.r-sharp .pg, body.r-sharp .draft-chip { border-radius: 4px !important; }
+    body.r-round .email-card, body.r-round .compose-float-win, body.r-round .modal-body, body.r-round .contact-card, body.r-round .suggest-row, body.r-round .auth-card { border-radius: 28px !important; }
+    body.r-round .compose-btn, body.r-round .sync-btn, body.r-round .pg { border-radius: 999px !important; }
+    body.d-compact .email-card { padding: 0.6rem 0.9rem; }
+    body.d-compact .email-list { gap: 0.4rem; }
+    body.d-compact .suggest-row { padding: 0.4rem 0.6rem; }
+    body.m-reduced *, body.m-reduced *::before, body.m-reduced *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+    body.m-off *, body.m-off *::before, body.m-off *::after { animation: none !important; transition: none !important; }
+
+    /* Animations */
+    @keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .email-card, .contact-card, .suggest-row { animation: cardIn 0.35s ease backwards; }
+    .email-list .email-card:nth-child(2) { animation-delay: 40ms; }
+    .email-list .email-card:nth-child(3) { animation-delay: 80ms; }
+    .email-list .email-card:nth-child(4) { animation-delay: 120ms; }
+    .email-list .email-card:nth-child(5) { animation-delay: 160ms; }
+    .compose-btn, .sync-btn, .pg { transition: transform 0.15s ease, background 0.2s ease; }
+    .compose-btn:active, .sync-btn:active, .pg:active { transform: scale(0.96); }
+    .compose-float-win { animation: slideUp 0.25s ease; }
+    #inboxView, #contactsView { animation: fadeIn 0.3s ease; }
+
+    /* Gmail-style sections */
+    .group-head { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.4rem; cursor: pointer; font-weight: 600; user-select: none; color: var(--text-dark); }
+    .group-head .caret { color: var(--text-muted); width: 1rem; }
+    .group-head .group-count { margin-left: auto; font-weight: 500; color: var(--text-muted); font-size: 0.85rem; }
+    .group-head:hover { color: var(--accent-blue); }
+
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
   </style>
@@ -234,11 +263,6 @@
             <button class="sync-btn" onclick="syncAll(true)"><i class="fa-solid fa-rotate"></i> Sync</button>
             <span class="sync-status" id="syncStatus"></span>
           </div>
-          <select id="readFilter" class="pg-size" onchange="renderFolder()">
-            <option value="all">All mail</option>
-            <option value="unread">Unread</option>
-            <option value="read">Read</option>
-          </select>
           <input type="text" class="search-bar" id="searchInput" placeholder="Search vibes..." oninput="renderFolder()">
         </div>
         <div class="split">
@@ -259,7 +283,8 @@
       <div id="contactsView" style="display: none; flex-direction: column; height: 100%; padding: 2rem; overflow-y: auto;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
           <h2>Contacts</h2>
-          <button class="compose-btn" onclick="openModal('addContactModal')"><i class="fa-solid fa-plus"></i> Add Contact</button>
+          <div style="display: flex; gap: 0.5rem;"><button class="compose-btn secondary" onclick="importGoogleContacts()"><i class="fa-brands fa-google"></i> Import Google contacts</button>
+        <button class="compose-btn" onclick="openModal('addContactModal')"><i class="fa-solid fa-plus"></i> Add Contact</button></div>
         </div>
         <input type="text" id="contactSearch" class="search-bar" placeholder="Type a name or email..." oninput="renderContacts()" style="width: 100%; max-width: 420px; margin-bottom: 1rem;">
         <div style="display: flex; flex-wrap: wrap; gap: 1rem; width: 100%;" id="contactsList"></div>
@@ -295,6 +320,39 @@
         <label>Logo (top left)</label>
         <input type="file" id="logoFileInput" accept="image/*" class="form-input" style="padding: 0.5rem;">
         <button class="compose-btn secondary" style="margin-top: 0.5rem; padding: 0.5rem 0.9rem;" onclick="resetLogo()">Reset logo</button>
+      </div>
+
+      <div class="form-group">
+        <label>Font</label>
+        <select id="uiFont" class="form-input" onchange="saveUI()">
+          <option value="inter">Inter (default)</option>
+          <option value="system">System</option>
+          <option value="serif">Serif</option>
+          <option value="mono">Monospace</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Corners</label>
+        <select id="uiRadius" class="form-input" onchange="saveUI()">
+          <option value="soft">Soft (default)</option>
+          <option value="sharp">Sharp</option>
+          <option value="round">Very round</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Density</label>
+        <select id="uiDensity" class="form-input" onchange="saveUI()">
+          <option value="comfortable">Comfortable</option>
+          <option value="compact">Compact</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Animations</label>
+        <select id="uiMotion" class="form-input" onchange="saveUI()">
+          <option value="full">Full</option>
+          <option value="reduced">Reduced</option>
+          <option value="off">Off</option>
+        </select>
       </div>
 
       <div class="btn-row">
@@ -345,10 +403,7 @@
           <option value="2000">2,000</option>
         </select>
       </div>
-      <div class="form-group">
-        <label>Google OAuth Client ID</label>
-        <input type="text" id="settingClientId" class="form-input" placeholder="your-client-id.apps.googleusercontent.com">
-      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">Google sign-in is built in.</p>
       <div class="form-group">
         <label>Microsoft (Outlook) Client ID</label>
         <input type="text" id="settingMsClientId" class="form-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
@@ -391,14 +446,16 @@
     const fmtDate = ts => new Date(ts).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
     const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/bottts/svg?seed=Chill';
     const DEFAULT_LOGO = document.getElementById('brandLogo').src;
-    const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify';
+    const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/contacts.readonly';
     const UNDO_SECONDS = 10;
+    const GOOGLE_CLIENT_ID = '57205882938-s5mh4kcemvp4ha2f9vp5uco3avk2c6n7.apps.googleusercontent.com';
     const THEME_DEFAULTS = { bgStart: '#e0f2fe', bgEnd: '#f0f9ff', accent: '#0284c7', text: '#0f172a' };
     const FOLDER_TITLES = { inbox: 'Inbox', sent: 'Sent', drafts: 'Drafts', scheduled: 'Scheduled', spam: 'Spam', bin: 'Bin' };
     const FOLDER_LABELS = { inbox: 'INBOX', sent: 'SENT', spam: 'SPAM', bin: 'TRASH' };
 
     // ---------- State ----------
     let contacts = JSON.parse(localStorage.getItem('chill_contacts') || '[]');
+    let googleContacts = JSON.parse(localStorage.getItem('chill_google_contacts') || '[]');
     let accounts = JSON.parse(localStorage.getItem('chill_accounts') || '[]');
     let activeEmail = localStorage.getItem('chill_active_email') || (accounts[0] ? accounts[0].email : null);
     let mailCache = {};
@@ -478,13 +535,12 @@
     // ---------- Settings ----------
     function saveSettings() {
       const name = document.getElementById('settingName').value;
-      const clientId = document.getElementById('settingClientId').value.trim();
+      const clientId = GOOGLE_CLIENT_ID;
       const avatar = pendingAvatar || localStorage.getItem('chill_avatar') || DEFAULT_AVATAR;
       pendingAvatar = null;
 
       localStorage.setItem('chill_name', name);
       localStorage.setItem('chill_avatar', avatar);
-      localStorage.setItem('chill_client_id', clientId);
       localStorage.setItem('chill_ms_client_id', document.getElementById('settingMsClientId').value.trim());
       msalApp = null;
       localStorage.setItem('chill_sync_limit', document.getElementById('settingSyncLimit').value);
@@ -500,10 +556,9 @@
     function loadSettings() {
       const name = localStorage.getItem('chill_name') || 'Chill User';
       const avatar = localStorage.getItem('chill_avatar') || DEFAULT_AVATAR;
-      const clientId = localStorage.getItem('chill_client_id');
+      const clientId = GOOGLE_CLIENT_ID;
 
       document.getElementById('settingName').value = name;
-      document.getElementById('settingClientId').value = clientId || '';
       document.getElementById('settingMsClientId').value = localStorage.getItem('chill_ms_client_id') || '';
       document.getElementById('settingSyncLimit').value = localStorage.getItem('chill_sync_limit') || '300';
       document.getElementById('avatarPreview').src = avatar;
@@ -603,7 +658,7 @@
     // Must be called directly from a click (browsers block popups otherwise).
     // prompt '' reuses the current Google session; 'select_account' lets the user add another account.
     function requestToken(prompt = '') {
-      if (!localStorage.getItem('chill_client_id')) {
+      if (!GOOGLE_CLIENT_ID) {
         return Promise.reject(new Error('Add your Google Client ID in Settings first.'));
       }
       if (!googleReady()) {
@@ -611,7 +666,7 @@
       }
       return new Promise((resolve, reject) => {
         const tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: localStorage.getItem('chill_client_id'),
+          client_id: GOOGLE_CLIENT_ID,
           scope: GMAIL_SCOPE,
           callback: async (resp) => {
             if (resp.error) return reject(new Error(resp.error_description || resp.error));
@@ -636,7 +691,7 @@
           },
           error_callback: (err) => reject(new Error(err.message || err.type || 'Sign-in was cancelled')),
         });
-        tokenClient.requestAccessToken(prompt ? { prompt } : { prompt: '', hint: activeEmail || undefined });
+        tokenClient.requestAccessToken({ prompt, hint: activeEmail || undefined });
       });
     }
 
@@ -1022,7 +1077,7 @@
     async function syncAll(interactive = false) {
       if (syncing) return;
       if (!interactive && mailCache.lastSync && Date.now() - mailCache.lastSync < 120000) return;
-      if (!localStorage.getItem('chill_client_id')) return;
+      if (!GOOGLE_CLIENT_ID) return;
       syncing = true;
       setSyncStatus('Syncing…');
       try {
@@ -1251,6 +1306,40 @@
         });
     }
 
+    // ---------- Personalisation options ----------
+    const FONTS = {
+      inter: "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+      system: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+      serif: "Georgia, 'Times New Roman', serif",
+      mono: "ui-monospace, Menlo, Consolas, monospace"
+    };
+
+    function loadUI() {
+      try { return { font: 'inter', radius: 'soft', density: 'comfortable', motion: 'full', ...JSON.parse(localStorage.getItem('chill_ui') || '{}') }; }
+      catch { return { font: 'inter', radius: 'soft', density: 'comfortable', motion: 'full' }; }
+    }
+
+    function applyUI(ui = loadUI()) {
+      document.documentElement.style.setProperty('--app-font', FONTS[ui.font] || FONTS.inter);
+      document.body.classList.remove('r-soft', 'r-sharp', 'r-round', 'd-comfortable', 'd-compact', 'm-full', 'm-reduced', 'm-off');
+      document.body.classList.add('r-' + ui.radius, 'd-' + ui.density, 'm-' + ui.motion);
+      document.getElementById('uiFont').value = ui.font;
+      document.getElementById('uiRadius').value = ui.radius;
+      document.getElementById('uiDensity').value = ui.density;
+      document.getElementById('uiMotion').value = ui.motion;
+    }
+
+    function saveUI() {
+      const ui = {
+        font: document.getElementById('uiFont').value,
+        radius: document.getElementById('uiRadius').value,
+        density: document.getElementById('uiDensity').value,
+        motion: document.getElementById('uiMotion').value
+      };
+      localStorage.setItem('chill_ui', JSON.stringify(ui));
+      applyUI(ui);
+    }
+
     // ---------- Personalise ----------
     function openPersonalise() {
       fillThemeInputs(loadTheme());
@@ -1427,75 +1516,7 @@
       return { name: '', email: raw };
     }
 
-    function renderContacts() {
-      const list = document.getElementById('contactsList');
-      const q = (document.getElementById('contactSearch').value || '').trim().toLowerCase();
 
-      if (!q) {
-        if (contacts.length === 0) {
-          list.innerHTML = '<p style="color: var(--text-muted);">No contacts saved yet. Click "Add Contact" above!</p>';
-          return;
-        }
-        list.innerHTML = contacts.map(c => `
-          <div class="contact-card">
-            <button class="delete-contact-btn" onclick="deleteContact(${Number(c.id)})"><i class="fa-solid fa-trash"></i></button>
-            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(c.name)}" style="width: 50px; height: 50px; border-radius: 50%;" alt="">
-            <h4 style="margin-top: 0.5rem;">${esc(c.name)}</h4>
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">${esc(c.email)}</p>
-            <button class="compose-btn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; width: 100%;" onclick="quickEmail('${esc(c.email)}')">
-              <i class="fa-solid fa-paper-plane"></i> Email
-            </button>
-          </div>`).join('');
-        return;
-      }
-
-      // Matches: saved contacts first, then people from your mail
-      const rows = [];
-      const seen = new Set();
-      contacts.forEach(c => {
-        const key = c.email.toLowerCase();
-        if (!seen.has(key) && `${c.name} ${c.email}`.toLowerCase().includes(q)) {
-          seen.add(key);
-          rows.push({ name: c.name, email: c.email, saved: true });
-        }
-      });
-      Object.values(mailCache).forEach(folder => {
-        if (!Array.isArray(folder)) return;
-        folder.forEach(m => {
-          [m.from, m.to].join(',').split(',').forEach(part => {
-            const p = parseAddr(part);
-            if (!p) return;
-            const key = p.email.toLowerCase();
-            if (!seen.has(key) && `${p.name} ${p.email}`.toLowerCase().includes(q)) {
-              seen.add(key);
-              rows.push({ name: p.name, email: p.email, saved: false });
-            }
-          });
-        });
-      });
-
-      if (!rows.length) {
-        list.innerHTML = '<p style="color: var(--text-muted);">No matches yet.</p>';
-        return;
-      }
-      list.innerHTML = rows.slice(0, 10).map(r => `
-        <div class="suggest-row">
-          <img src="https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(r.name || r.email)}" class="suggest-avatar" alt="">
-          <div style="min-width: 0; flex: 1;">
-            <div style="font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(r.name || r.email)}</div>
-            <div style="font-size: 0.85rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(r.email)}</div>
-          </div>
-          ${r.saved ? '<span class="tag">Saved</span>' : `<button class="sync-btn" onclick="addContactFrom('${esc(r.name)}', '${esc(r.email)}')">Save</button>`}
-          <button class="compose-btn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="quickEmail('${esc(r.email)}')">Email</button>
-        </div>`).join('');
-    }
-
-    function addContactFrom(name, email) {
-      contacts.push({ id: Date.now() + Math.random(), name: name || email, email });
-      localStorage.setItem('chill_contacts', JSON.stringify(contacts));
-      renderContacts();
-      notify('Contact saved');
-    }
 
     // ---------- Compose windows (several drafts open at once) ----------
     const MAX_ATTACH_BYTES = 18 * 1024 * 1024;
@@ -1934,67 +1955,7 @@
 
     initSplitDivider();
 
-    let pageSize = Number(localStorage.getItem('chill_page_size')) || 20;
-    let currentPage = 1;
-    let pagerFolder = null;
-    let pagerQuery = null;
 
-    function renderFolder() {
-      const list = document.getElementById('emailList');
-      const query = document.getElementById('searchInput').value.trim().toLowerCase();
-      if (pagerFolder !== currentFolder || pagerQuery !== query + '|' + readFilter()) {
-        currentPage = 1;
-        pagerFolder = currentFolder;
-        pagerQuery = query + '|' + readFilter();
-      }
-
-      let items;
-      if (currentFolder === 'scheduled') {
-        items = scheduled.map(s => ({ ...s.msg, id: s.id, date: s.sendAt, kind: 'scheduled' }));
-      } else if (currentFolder === 'drafts') {
-        items = [
-          ...localDrafts.map(d => ({ ...d.msg, id: d.id, date: d.updated, kind: 'local-draft' })),
-          ...(mailCache.drafts || []).map(x => ({ ...x, kind: 'gmail-draft' }))
-        ];
-      } else {
-        items = (mailCache[currentFolder] || []).map(x => ({ ...x, kind: 'mail' }));
-      }
-
-      items = items
-        .filter(i => !query || [i.subject, i.from, i.to, i.snippet, i.body].some(v => (v || '').toLowerCase().includes(query)))
-        .sort((a, b) => b.date - a.date);
-      items = applyReadFilter(items);
-
-      const total = items.length;
-      if (!total) {
-        const hint = currentFolder === 'scheduled' ? 'Nothing scheduled.' :
-          currentFolder === 'drafts' ? 'No drafts yet.' : 'Nothing here yet. Click Sync to load your mail.';
-        list.innerHTML = `<p class="empty-state">${hint}</p>`;
-        renderPager(0, 0, 1, 0);
-        return;
-      }
-
-      const pages = Math.max(1, Math.ceil(total / pageSize));
-      currentPage = Math.min(currentPage, pages);
-      const start = (currentPage - 1) * pageSize;
-      const visible = items.slice(start, start + pageSize);
-
-      list.innerHTML = visible.map(i => {
-        const who = currentFolder === 'sent' || i.kind === 'scheduled' || i.kind === 'local-draft' ? `To: ${i.to || '(no recipient)'}` : i.from;
-        const tag = i.kind === 'scheduled' ? '<span class="tag">Scheduled</span>' : i.kind === 'local-draft' ? '<span class="tag">Draft</span>' : '';
-        return `
-          <div class="email-card ${isUnread(i) ? 'unread' : ''}" onclick="openItem('${i.kind}', '${esc(i.id)}')">
-            <div style="min-width: 0;">
-              <h4>${esc(i.subject || '(no subject)')}${tag}</h4>
-              <div style="font-size: 0.85rem; color: var(--text-muted);">${esc(who)}</div>
-              <div class="snippet">${esc(i.snippet || i.body || '')}</div>
-            </div>
-            <span class="meta">${esc(fmtDate(i.date))}</span>
-          </div>`;
-      }).join('');
-
-      renderPager(start + 1, Math.min(start + pageSize, total), pages, total);
-    }
 
     function renderPager(from, to, pages, total) {
       const el = document.getElementById('pager');
@@ -2043,20 +2004,11 @@
     // so opening a message marks it read here, and Gmail/Outlook unread state is shown too.
     let readSet = new Set(JSON.parse(localStorage.getItem('chill_read') || '[]'));
 
-    function readFilter() {
-      const el = document.getElementById('readFilter');
-      return el ? el.value : 'all';
-    }
 
     function isUnread(i) {
       return i.kind === 'mail' && !!i.unread && !readSet.has(i.id);
     }
 
-    function applyReadFilter(items) {
-      const f = readFilter();
-      if (f === 'all' || !['inbox', 'sent', 'spam', 'bin'].includes(currentFolder)) return items;
-      return items.filter(i => i.kind === 'mail' && (f === 'unread' ? isUnread(i) : !isUnread(i)));
-    }
 
 
     function findMail(id) {
@@ -2101,6 +2053,260 @@
       setItemUnread(id, false);
     }
 
+    let pageSize = Number(localStorage.getItem('chill_page_size')) || 20;
+    let currentPage = 1;
+    let pagerFolder = null;
+    let pagerQuery = null;
+    let groupOpen = { unread: true, read: true };
+
+    function groupHeader(g) {
+      return `<div class="group-head" onclick="toggleGroup('${g.key}')">
+        <span class="caret">${groupOpen[g.key] ? '▾' : '▸'}</span>
+        <span class="group-name">${g.label}</span>
+        <span class="group-count">${g.items.length} ${g.items.length === 1 ? 'email' : 'emails'}</span>
+      </div>`;
+    }
+
+    function cardHtml(i) {
+      const who = currentFolder === 'sent' || i.kind === 'scheduled' || i.kind === 'local-draft' ? `To: ${i.to || '(no recipient)'}` : i.from;
+      const tag = i.kind === 'scheduled' ? '<span class="tag">Scheduled</span>' : i.kind === 'local-draft' ? '<span class="tag">Draft</span>' : '';
+      return `
+        <div class="email-card ${isUnread(i) ? 'unread' : ''}" onclick="openItem('${i.kind}', '${esc(i.id)}')">
+          <div style="min-width: 0;">
+            <h4>${esc(i.subject || '(no subject)')}${tag}</h4>
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${esc(who)}</div>
+            <div class="snippet">${esc(i.snippet || i.body || '')}</div>
+          </div>
+          <span class="meta">${esc(fmtDate(i.date))}</span>
+        </div>`;
+    }
+
+    function toggleGroup(key) {
+      groupOpen[key] = !groupOpen[key];
+      currentPage = 1;
+      renderFolder();
+    }
+
+    function renderFolder() {
+      const list = document.getElementById('emailList');
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      if (pagerFolder !== currentFolder || pagerQuery !== query) {
+        currentPage = 1;
+        pagerFolder = currentFolder;
+        pagerQuery = query;
+      }
+
+      let items;
+      if (currentFolder === 'scheduled') {
+        items = scheduled.map(s => ({ ...s.msg, id: s.id, date: s.sendAt, kind: 'scheduled' }));
+      } else if (currentFolder === 'drafts') {
+        items = [
+          ...localDrafts.map(d => ({ ...d.msg, id: d.id, date: d.updated, kind: 'local-draft' })),
+          ...(mailCache.drafts || []).map(x => ({ ...x, kind: 'gmail-draft' }))
+        ];
+      } else {
+        items = (mailCache[currentFolder] || []).map(x => ({ ...x, kind: 'mail' }));
+      }
+
+      items = items
+        .filter(i => !query || [i.subject, i.from, i.to, i.snippet, i.body].some(v => (v || '').toLowerCase().includes(query)))
+        .sort((a, b) => b.date - a.date);
+
+      if (!items.length) {
+        const hint = currentFolder === 'scheduled' ? 'Nothing scheduled.' :
+          currentFolder === 'drafts' ? 'No drafts yet.' : 'Nothing here yet. Click Sync to load your mail.';
+        list.innerHTML = `<p class="empty-state">${hint}</p>`;
+        renderPager(0, 0, 1, 0);
+        return;
+      }
+
+      // Mail folders are split into Unread and Everything else, like Gmail
+      const isMail = ['inbox', 'sent', 'spam', 'bin'].includes(currentFolder);
+      const groups = isMail
+        ? [
+            { key: 'unread', label: 'Unread', items: items.filter(isUnread) },
+            { key: 'read', label: 'Everything else', items: items.filter(i => !isUnread(i)) }
+          ].filter(g => g.items.length)
+        : [{ key: 'all', label: '', items }];
+
+      const flat = [];
+      groups.forEach(g => { if (groupOpen[g.key] !== false) flat.push(...g.items); });
+
+      const total = flat.length;
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, pages);
+      const start = (currentPage - 1) * pageSize;
+      const pageItems = flat.slice(start, start + pageSize);
+      const onPage = new Set(pageItems);
+
+      let html = '';
+      groups.forEach(g => {
+        const open = groupOpen[g.key] !== false;
+        const visible = g.items.filter(it => onPage.has(it));
+        if (isMail && (!open || visible.length || currentPage === 1)) {
+          if (!open || visible.length) html += groupHeader(g);
+        }
+        if (open) visible.forEach(it => { html += cardHtml(it); });
+      });
+
+      if (!html) html = `<p class="empty-state">${total ? '' : 'All sections are collapsed. Open one to see its emails.'}</p>`;
+      list.innerHTML = html;
+      renderPager(total ? start + 1 : 0, Math.min(start + pageSize, total), pages, total);
+    }
+
+    function renderPager(from, to, pages, total) {
+      const el = document.getElementById('pager');
+      if (!total) { el.innerHTML = ''; return; }
+      const cur = currentPage;
+
+      // Page numbers: first, last, and a window around the current page
+      const nums = new Set([1, pages]);
+      for (let n = cur - 2; n <= cur + 2; n++) if (n >= 1 && n <= pages) nums.add(n);
+      let numbers = '';
+      let prev = 0;
+      [...nums].sort((a, b) => a - b).forEach(n => {
+        if (n - prev > 1) numbers += '<span class="pg-gap">…</span>';
+        numbers += `<button class="pg ${n === cur ? 'on' : ''}" onclick="goPage(${n})">${n}</button>`;
+        prev = n;
+      });
+
+      const sizes = [10, 20, 30, 40, 50, 100]
+        .map(n => `<option value="${n}" ${n === pageSize ? 'selected' : ''}>${n} per page</option>`).join('');
+
+      el.innerHTML = `
+        <div class="pager-row">
+          <span class="pg-info">${from}–${to} of ${total}</span>
+          <select class="pg-size" onchange="setPageSize(this.value)">${sizes}</select>
+          <button class="pg" ${cur <= 1 ? 'disabled' : ''} onclick="goPage(${cur - 1})">‹</button>
+          ${numbers}
+          <button class="pg" ${cur >= pages ? 'disabled' : ''} onclick="goPage(${cur + 1})">›</button>
+        </div>`;
+    }
+
+    function goPage(n) {
+      currentPage = n;
+      renderFolder();
+      document.getElementById('emailList').scrollTop = 0;
+    }
+
+    function setPageSize(n) {
+      pageSize = Number(n);
+      localStorage.setItem('chill_page_size', String(pageSize));
+      currentPage = 1;
+      renderFolder();
+    }
+
+    function avatarFor(name, email, photo) {
+      return esc(photo || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name || email)}`);
+    }
+
+    function contactCard(c, deletable) {
+      return `
+        <div class="contact-card">
+          ${deletable ? `<button class="delete-contact-btn" onclick="deleteContact(${Number(c.id)})"><i class="fa-solid fa-trash"></i></button>` : ''}
+          <img src="${avatarFor(c.name, c.email, c.photo)}" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" alt="">
+          <h4 style="margin-top: 0.5rem;">${esc(c.name || c.email)}</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">${esc(c.email)}</p>
+          ${deletable ? '' : '<span class="tag">Google</span>'}
+          <button class="compose-btn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; width: 100%; margin-top: 0.5rem;" onclick="quickEmail('${esc(c.email)}')">
+            <i class="fa-solid fa-paper-plane"></i> Email
+          </button>
+        </div>`;
+    }
+
+    function renderContacts() {
+      const list = document.getElementById('contactsList');
+      const q = (document.getElementById('contactSearch').value || '').trim().toLowerCase();
+
+      if (!q) {
+        if (!contacts.length && !googleContacts.length) {
+          list.innerHTML = '<p style="color: var(--text-muted);">No contacts yet. Add one, or import your Google contacts.</p>';
+          return;
+        }
+        list.innerHTML = contacts.map(c => contactCard(c, true)).join('') + googleContacts.map(c => contactCard(c, false)).join('');
+        return;
+      }
+
+      // Matches: saved, Google, then people from your mail
+      const rows = [];
+      const seen = new Set();
+      const add = (r, key) => {
+        if (seen.has(key)) return;
+        seen.add(key);
+        rows.push(r);
+      };
+      contacts.forEach(c => {
+        if (`${c.name} ${c.email}`.toLowerCase().includes(q)) add({ name: c.name, email: c.email, photo: c.photo, tag: 'Saved' }, c.email.toLowerCase());
+      });
+      googleContacts.forEach(c => {
+        if (`${c.name} ${c.email}`.toLowerCase().includes(q)) add({ name: c.name, email: c.email, photo: c.photo, tag: 'Google' }, c.email.toLowerCase());
+      });
+      Object.values(mailCache).forEach(folder => {
+        if (!Array.isArray(folder)) return;
+        folder.forEach(m => {
+          [m.from, m.to].join(',').split(',').forEach(part => {
+            const p = parseAddr(part);
+            if (p && `${p.name} ${p.email}`.toLowerCase().includes(q)) add({ name: p.name, email: p.email, tag: null }, p.email.toLowerCase());
+          });
+        });
+      });
+
+      if (!rows.length) {
+        list.innerHTML = '<p style="color: var(--text-muted);">No matches yet.</p>';
+        return;
+      }
+      list.innerHTML = rows.slice(0, 12).map(r => `
+        <div class="suggest-row">
+          <img src="${avatarFor(r.name, r.email, r.photo)}" class="suggest-avatar" alt="">
+          <div style="min-width: 0; flex: 1;">
+            <div style="font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(r.name || r.email)}</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(r.email)}</div>
+          </div>
+          ${r.tag ? `<span class="tag">${r.tag}</span>` : `<button class="sync-btn" onclick="addContactFrom('${esc(r.name)}', '${esc(r.email)}')">Save</button>`}
+          <button class="compose-btn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="quickEmail('${esc(r.email)}')">Email</button>
+        </div>`).join('');
+    }
+
+    // Reads the Google address book (needs the contacts permission and the People API enabled)
+    async function importGoogleContacts() {
+      if (activeProvider() === 'microsoft') {
+        alert('Google contacts can only be imported into a Gmail account. Switch to a Gmail account first.');
+        return;
+      }
+      try {
+        const token = await requestToken('consent');
+        const all = [];
+        let pageToken = '';
+        do {
+          const r = await fetch(`https://people.googleapis.com/v1/people/me/connections?personFields=names,emailAddresses,photos&pageSize=1000${pageToken ? '&pageToken=' + pageToken : ''}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!r.ok) throw new Error(`Google Contacts error ${r.status}. Make sure the People API is enabled for your project.`);
+          const d = await r.json();
+          all.push(...(d.connections || []));
+          pageToken = d.nextPageToken || '';
+        } while (pageToken && all.length < 5000);
+
+        googleContacts = all.map(p => ({
+          name: (p.names && p.names[0] && p.names[0].displayName) || '',
+          email: (p.emailAddresses && p.emailAddresses[0] && p.emailAddresses[0].value) || '',
+          photo: (p.photos && p.photos[0] && p.photos[0].url) || ''
+        })).filter(c => c.email);
+        localStorage.setItem('chill_google_contacts', JSON.stringify(googleContacts));
+        renderContacts();
+        notify(`Imported ${googleContacts.length} Google contacts`);
+      } catch (err) {
+        alert(`Couldn't import Google contacts: ${err.message}`);
+      }
+    }
+
+    function addContactFrom(name, email) {
+      contacts.push({ id: Date.now() + Math.random(), name: name || email, email });
+      localStorage.setItem('chill_contacts', JSON.stringify(contacts));
+      renderContacts();
+      notify('Contact saved');
+    }
+
     // ---------- Startup ----------
     window.addEventListener('load', () => {
       setTimeout(() => {
@@ -2111,6 +2317,7 @@
 
       loadSettings();
       applyLogo();
+      applyUI();
       loadCacheForActive();
       renderFolder();
       migrateLegacyToken().then(() => {
