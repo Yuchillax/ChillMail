@@ -7,7 +7,7 @@
   <script src="https://accounts.google.com/gsi/client" async defer onerror="window.gsiFailed = true"></script>
   <script src="https://alcdn.msauth.net/browser/2.39.0/js/msal-browser.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;600;700&family=Nunito:wght@400;600;700&family=Lora:wght@400;600;700&family=Space+Grotesk:wght@400;600;700&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <style>
     :root {
@@ -291,6 +291,11 @@
 
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+    .goog-te-banner-frame.skiptranslate, .goog-te-gadget-icon { display: none !important; }
+    body { top: 0 !important; }
+    .lang-bar { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-bottom: 1rem; font-size: 0.9rem; }
+    .lang-bar select { padding: 0.4rem 0.6rem; border-radius: 10px; border: 1px solid var(--border-color); background: white; }
+    .lang-note { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem; }
   </style>
 </head>
 <body>
@@ -465,6 +470,25 @@
         </select>
       </div>
       <div class="form-group">
+        <label>Language</label>
+        <select id="uiLang" class="form-input" onchange="setLang(this.value)">
+<option value="en">English</option>
+<option value="zh-CN">中文（简体）</option>
+<option value="zh-TW">中文（繁體）</option>
+<option value="fr">Français</option>
+<option value="it">Italiano</option>
+<option value="ko">한국어</option>
+<option value="ja">日本語</option>
+<option value="hi">हिन्दी</option>
+<option value="fa">دری (Dari)</option>
+<option value="ps">پښتو (Pashto)</option>
+<option value="pl">Polski</option>
+<option value="pt">Português</option>
+<option value="vi">Tiếng Việt</option>
+        </select>
+        <p class="lang-note" style="margin-top: 0.4rem;">Translated automatically by Google Translate. Some buttons and messages may not translate perfectly.</p>
+      </div>
+      <div class="form-group">
         <label>Message list</label>
         <select id="uiListSide" class="form-input" onchange="saveUI()">
           <option value="left">On the left (default)</option>
@@ -478,6 +502,10 @@
           <option value="click">Click</option>
           <option value="pop">Pop</option>
           <option value="chime">Chime</option>
+          <option value="whoosh">Whoosh</option>
+          <option value="bubble">Bubble</option>
+          <option value="ding">Ding</option>
+          <option value="soft">Soft</option>
         </select>
       </div>
       <div class="form-group">
@@ -515,8 +543,13 @@
         <select id="uiFont" class="form-input" onchange="saveUI()">
           <option value="inter">Inter (default)</option>
           <option value="system">System</option>
-          <option value="serif">Serif</option>
+          <option value="serif">Georgia (serif)</option>
           <option value="mono">Monospace</option>
+          <option value="poppins">Poppins</option>
+          <option value="nunito">Nunito (rounded)</option>
+          <option value="lora">Lora (serif)</option>
+          <option value="grotesk">Space Grotesk</option>
+          <option value="code">Fira Code (mono)</option>
         </select>
       </div>
       <div class="form-group">
@@ -1354,6 +1387,7 @@
         localStorage.setItem(cacheKey(), JSON.stringify(mailCache));
         handleNewMail();
         setSyncStatus(failed.length ? `Synced with ${failed.length} error(s)` : `Synced ${new Date().toLocaleTimeString([], { timeStyle: 'short' })}`);
+        if (interactive) playSfx('sync');
         renderFolder();
       } catch (err) {
         setSyncStatus(err.message);
@@ -1540,6 +1574,7 @@
         item = (mailCache[folder] || []).find(x => x.id === id);
         if (!item) return;
         if (kind === 'mail') {
+          playSfx('open');
           paneItemId = id;
           markRead(id);
           renderMailActions(id);
@@ -1576,7 +1611,12 @@
       inter: "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
       system: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
       serif: "Georgia, 'Times New Roman', serif",
-      mono: "ui-monospace, Menlo, Consolas, monospace"
+      mono: "ui-monospace, Menlo, Consolas, monospace",
+      poppins: "'Poppins', system-ui, sans-serif",
+      nunito: "'Nunito', system-ui, sans-serif",
+      lora: "'Lora', Georgia, serif",
+      grotesk: "'Space Grotesk', system-ui, sans-serif",
+      code: "'Fira Code', ui-monospace, monospace"
     };
 
 
@@ -1956,6 +1996,7 @@
       if (isWinEmpty(w)) { notify('Nothing to save'); return; }
       autosaveWin(id);
       closeWin(id);
+      playSfx('save');
       notify('Draft saved');
     }
 
@@ -2059,6 +2100,7 @@
         persistScheduled();
         removeLocalDraft(w.draftId);
         removeWin(w);
+        playSfx('schedule');
         notify(`Scheduled for ${fmtDate(when)}`);
         return;
       }
@@ -2090,9 +2132,10 @@
         cleanupFiles(job.msg.files);
         removeLocalDraft(job.draftId);
         notify(`Sent: ${job.msg.subject || '(no subject)'}`);
-        playSound();
+        playSfx('send');
         syncFolder('sent').then(() => renderFolder()).catch(() => {});
       } catch (err) {
+        playSfx('error');
         restoreDraft(job.msg, `Could not send: ${err.message}`, job.draftId);
       }
     }
@@ -2103,6 +2146,7 @@
       clearInterval(job.interval);
       jobs = jobs.filter(j => j !== job);
       renderToasts();
+      playSfx('undo');
       restoreDraft(job.msg, 'Send cancelled', job.draftId);
     }
 
@@ -2357,6 +2401,7 @@
     }
 
     function toggleGroup(key) {
+      playSfx('toggle');
       groupOpen[key] = !groupOpen[key];
       currentPage = 1;
       renderFolder();
@@ -2584,6 +2629,7 @@
       contacts.push({ id: Date.now() + Math.random(), name: name || email, email });
       localStorage.setItem('chill_contacts', JSON.stringify(contacts));
       renderContacts();
+      playSfx('save');
       notify('Contact saved');
     }
 
@@ -2738,6 +2784,7 @@
       }
 
       // Update what Chillmail shows
+      playSfx(action === 'delete' || action === 'spam' ? 'delete' : 'toggle');
       if (action === 'read' || action === 'unread') {
         ids.forEach(id => {
           const m = findMail(id);
@@ -2754,34 +2801,64 @@
       renderFolder();
     }
 
-    // ---------- Sounds ----------
+
+    // ---------- Sound effects ----------
+    // The chosen pack sets the tone; each event sets how many notes it plays and how they move
+    const SOUND_PACKS = {
+      click: { base: 1800, type: 'square', dur: 0.04, vol: 0.05 },
+      pop: { base: 500, type: 'sine', dur: 0.12, vol: 0.18, slide: 1100 },
+      chime: { base: 880, type: 'sine', dur: 0.5, vol: 0.15 },
+      whoosh: { base: 300, type: 'sawtooth', dur: 0.25, vol: 0.06, slide: 900 },
+      bubble: { base: 400, type: 'sine', dur: 0.18, vol: 0.14, slide: 700 },
+      ding: { base: 1320, type: 'triangle', dur: 0.6, vol: 0.15 },
+      soft: { base: 660, type: 'sine', dur: 0.3, vol: 0.08 }
+    };
+
+    const SFX_EVENTS = {
+      click:    { pitch: 1,   count: 1, step: 0,     gap: 0,    len: 1,   vol: 0.7 },
+      open:     { pitch: 1.1, count: 1, step: 0,     gap: 0,    len: 0.8, vol: 0.6 },
+      save:     { pitch: 1.3, count: 2, step: 0.5,   gap: 0.07, len: 0.7, vol: 0.6 },
+      schedule: { pitch: 1.2, count: 3, step: 0.25,  gap: 0.08, len: 0.7, vol: 0.6 },
+      send:     { pitch: 1.4, count: 2, step: 0.5,   gap: 0.08, len: 0.8, vol: 0.7 },
+      undo:     { pitch: 0.8, count: 2, step: -0.25, gap: 0.07, len: 0.7, vol: 0.6 },
+      error:    { pitch: 0.55, count: 2, step: 0,    gap: 0.12, len: 1,   vol: 0.8 },
+      delete:   { pitch: 0.7, count: 2, step: -0.3,  gap: 0.09, len: 0.9, vol: 0.7 },
+      toggle:   { pitch: 1.5, count: 1, step: 0,     gap: 0,    len: 0.5, vol: 0.5 },
+      newmail:  { pitch: 1.2, count: 3, step: 0.33,  gap: 0.12, len: 0.9, vol: 0.8 },
+      penguin:  { pitch: 0.9, count: 2, step: 0.5,   gap: 0.1,  len: 0.6, vol: 0.6 },
+      tour:     { pitch: 1.25, count: 3, step: 0.25, gap: 0.09, len: 0.7, vol: 0.6 },
+      sync:     { pitch: 1,   count: 2, step: 0.5,   gap: 0.06, len: 0.5, vol: 0.5 }
+    };
+
     let audioCtx = null;
-    function playSound(name = loadUI().sound) {
-      if (!name || name === 'off') return;
+    function playSfx(event = 'click') {
+      const pack = SOUND_PACKS[loadUI().sound];
+      if (!pack) return; // "Off" or no sound chosen
       try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+      const ev = SFX_EVENTS[event] || SFX_EVENTS.click;
       const t = audioCtx.currentTime;
-      const tone = (freq, at, dur, type, vol, slideTo) => {
+      for (let k = 0; k < ev.count; k++) {
+        const freq = pack.base * ev.pitch * (1 + k * ev.step);
+        const at = t + k * ev.gap;
+        const dur = pack.dur * ev.len;
         const o = audioCtx.createOscillator();
         const g = audioCtx.createGain();
-        o.type = type;
-        o.frequency.setValueAtTime(freq, t + at);
-        if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + at + dur);
-        g.gain.setValueAtTime(vol, t + at);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+        o.type = pack.type;
+        o.frequency.setValueAtTime(freq, at);
+        if (pack.slide) o.frequency.exponentialRampToValueAtTime(pack.slide * ev.pitch, at + dur);
+        g.gain.setValueAtTime(pack.vol * ev.vol, at);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
         o.connect(g).connect(audioCtx.destination);
-        o.start(t + at);
-        o.stop(t + at + dur);
-      };
-      if (name === 'click') tone(1800, 0, 0.04, 'square', 0.04);
-      if (name === 'pop') tone(500, 0, 0.12, 'sine', 0.2, 1100);
-      if (name === 'chime') { tone(880, 0, 0.5, 'sine', 0.15); tone(1320, 0.12, 0.6, 'sine', 0.12); }
+        o.start(at);
+        o.stop(at + dur + 0.02);
+      }
     }
 
     // Button presses make a click when that sound is chosen
     document.addEventListener('click', e => {
       if (e.target.closest('.compose-btn, .sync-btn, .pg, .nav-item, .bulk-actions button, .group-head, .tour button')) {
         const sound = loadUI().sound;
-        if (sound === 'click') playSound('click');
+        if (sound !== 'off') playSfx('click');
       }
     }, true);
 
@@ -2798,7 +2875,7 @@
       const ui = loadUI();
       const text = `${fresh.length} new email${fresh.length === 1 ? '' : 's'}`;
       if (ui.notify === 'on') notify(`📬 ${text}`, 4000);
-      if (ui.sound !== 'off') playSound(ui.sound);
+      playSfx('newmail');
       if (ui.desktop === 'on' && 'Notification' in window && Notification.permission === 'granted') {
         new Notification('Chillmail', { body: `${text}: ${fresh[0].subject || '(no subject)'}` });
       }
@@ -2827,6 +2904,7 @@
       const rules = loadRules();
       rules.push({ id: String(Date.now() + Math.random()), field: document.getElementById('ruleField').value, match, action: document.getElementById('ruleAction').value });
       localStorage.setItem('chill_rules', JSON.stringify(rules));
+      playSfx('save');
       document.getElementById('ruleMatch').value = '';
       renderRules();
     }
@@ -2935,6 +3013,7 @@
 
     function startTour() {
       tourIndex = 0;
+      playSfx('tour');
       document.getElementById('tutorial').style.display = 'flex';
       renderTour();
     }
@@ -2957,6 +3036,7 @@
     function endTour() {
       document.getElementById('tutorial').style.display = 'none';
       localStorage.setItem('chill_tutorial_done', '1');
+      playSfx('tour');
     }
 
     // ---------- Penguin ----------
@@ -2994,6 +3074,7 @@
       const acts = ['wave', 'hop', 'spin', 'sleep', 'walk'];
       const act = acts[Math.floor(Math.random() * acts.length)];
       p.className = 'penguin show ' + act;
+      playSfx('penguin');
       if (Math.random() < 0.7) pengSay();
       const duration = { wave: 2000, hop: 2000, spin: 1200, sleep: 4500, walk: 6200 }[act];
       setTimeout(() => { p.className = 'penguin'; schedulePenguin(); }, duration);
@@ -3004,6 +3085,7 @@
       document.body.classList.toggle('no-penguin', loadUI().penguin === 'off');
       schedulePenguin();
       if (!localStorage.getItem('chill_tutorial_done')) setTimeout(startTour, 800);
+      window.addEventListener('pointerdown', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, { once: true });
       document.addEventListener('change', e => {
         if (e.target.id === 'uiDesktop' && e.target.value === 'on' && 'Notification' in window && Notification.permission === 'default') {
           Notification.requestPermission();
@@ -3039,6 +3121,28 @@
 
     setInterval(checkScheduled, 1000);
     setInterval(() => { if (hasSession()) syncAll(false); }, 10 * 60 * 1000);
+  </script>
+<script>
+  const LANG_CODES = ["en", "zh-CN", "zh-TW", "fr", "it", "ko", "ja", "hi", "fa", "ps", "pl", "pt", "vi"];
+  function getLang() {
+    const m = document.cookie.match(/googtrans=\/en\/([^;]+)/);
+    return m ? m[1] : 'en';
+  }
+  function setLang(code) {
+    document.cookie = 'googtrans=/en/' + code + '; path=/';
+    location.reload();
+  }
+  function googleTranslateElementInit() {
+    new google.translate.TranslateElement({ pageLanguage: 'en', includedLanguages: 'zh-CN,zh-TW,fr,it,ko,ja,hi,fa,ps,pl,pt,vi', autoDisplay: false }, 'google_translate_element');
+  }
+</script>
+<div id="google_translate_element" style="display: none;"></div>
+<script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" defer></script>
+  <script>
+    (function () {
+      const sel = document.getElementById('uiLang');
+      sel.value = getLang();
+    })();
   </script>
 </body>
 </html>
