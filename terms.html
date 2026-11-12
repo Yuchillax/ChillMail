@@ -32,11 +32,35 @@
     .links { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color); }
     .btn { background: var(--accent-light); color: var(--accent-blue); padding: 0.55rem 1rem; border-radius: 10px; text-decoration: none; font-weight: 600; }
     .btn:hover { background: var(--border-color); color: var(--accent-hover); }
+    .goog-te-banner-frame.skiptranslate, .goog-te-gadget-icon { display: none !important; }
+    body { top: 0 !important; }
+    .lang-bar { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-bottom: 1rem; font-size: 0.9rem; }
+    .lang-bar select { padding: 0.4rem 0.6rem; border-radius: 10px; border: 1px solid var(--border-color); background: white; }
+    .lang-note { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="brand">❄ Chillmail</div>
+    <div class="lang-bar">
+      <label for="langSel">Language</label>
+      <select id="langSel" onchange="setLang(this.value)">
+<option value="en">English</option>
+<option value="zh-CN">中文（简体）</option>
+<option value="zh-TW">中文（繁體）</option>
+<option value="fr">Français</option>
+<option value="it">Italiano</option>
+<option value="ko">한국어</option>
+<option value="ja">日本語</option>
+<option value="hi">हिन्दी</option>
+<option value="fa">دری (Dari)</option>
+<option value="ps">پښتو (Pashto)</option>
+<option value="pl">Polski</option>
+<option value="pt">Português</option>
+<option value="vi">Tiếng Việt</option>
+      </select>
+    </div>
+    <p class="lang-note">Translated automatically by Google Translate. The English version is the original.</p>
 
     <h1>Terms of Service</h1>
     <p class="updated">Last updated: November 12, 2026</p>
@@ -98,5 +122,27 @@
       <a class="btn" href="https://youtube.com/@yuchischill" target="_blank" rel="noopener">YouTube</a>
     </div>
   </div>
+<script>
+  const LANG_CODES = ["en", "zh-CN", "zh-TW", "fr", "it", "ko", "ja", "hi", "fa", "ps", "pl", "pt", "vi"];
+  function getLang() {
+    const m = document.cookie.match(/googtrans=\/en\/([^;]+)/);
+    return m ? m[1] : 'en';
+  }
+  function setLang(code) {
+    document.cookie = 'googtrans=/en/' + code + '; path=/';
+    location.reload();
+  }
+  function googleTranslateElementInit() {
+    new google.translate.TranslateElement({ pageLanguage: 'en', includedLanguages: 'zh-CN,zh-TW,fr,it,ko,ja,hi,fa,ps,pl,pt,vi', autoDisplay: false }, 'google_translate_element');
+  }
+</script>
+<div id="google_translate_element" style="display: none;"></div>
+<script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" defer></script>
+  <script>
+    (function () {
+      const sel = document.getElementById('langSel');
+      sel.value = getLang();
+    })();
+  </script>
 </body>
 </html>
