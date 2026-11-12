@@ -237,6 +237,14 @@
     body.pane-clear .reader-pane { background: transparent; }
     body.pane-solid .reader-pane { background: #ffffff; }
 
+    /* Selection bar */
+    .bulk-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; padding: 0.5rem 1rem; border-bottom: 1px solid var(--border-color); background: white; }
+    .bulk-bar:empty { display: none; }
+    .bulk-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; cursor: pointer; }
+    .bulk-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    .bulk-actions .pg:disabled { opacity: 0.4; cursor: default; }
+    .sel-box { width: 18px; height: 18px; margin-top: 0.2rem; flex-shrink: 0; accent-color: var(--accent-blue); cursor: pointer; }
+
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
   </style>
@@ -308,7 +316,7 @@
           <input type="text" class="search-bar" id="searchInput" placeholder="Search vibes..." oninput="renderFolder()">
         </div>
         <div class="split">
-          <div class="list-col"><div class="email-list" id="emailList"></div><div class="pager" id="pager"></div></div>
+          <div class="list-col"><div class="bulk-bar" id="bulkBar"></div><div class="email-list" id="emailList"></div><div class="pager" id="pager"></div></div>
           <div class="split-divider" id="splitDivider" title="Drag to resize"></div>
           <div class="reader-pane" id="readerPane">
             <button class="back-btn" onclick="closeReader()"><i class="fa-solid fa-arrow-left"></i> Back</button>
@@ -449,13 +457,18 @@
     <div class="modal-body">
       <h3>Settings</h3>
       <br>
-      <details>
-        <summary>How to get a Google Client ID?</summary>
-        <p>1. Go to the <b>Google Cloud Console</b>.<br>
-           2. Create a project and enable the <b>Gmail API</b>.<br>
-           3. Configure the OAuth consent screen with the scopes <b>gmail.send</b> and <b>gmail.readonly</b>.<br>
-           4. Create an <b>OAuth 2.0 Client ID</b> (Web application).<br>
-           5. Add your hosting address to Authorized JavaScript origins.</p>
+      <details open>
+        <summary>Setup (do this once)</summary>
+        <div style="margin-top: 0.5rem; line-height: 1.6;">
+          <p><b>Google (Gmail and Contacts)</b></p>
+          <ol style="padding-left: 1.2rem;">
+            <li>Open the <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com?project=57205882938" target="_blank" rel="noopener">Gmail API page</a> and click <b>Enable</b>.</li>
+            <li>Open the <a href="https://console.cloud.google.com/apis/library/people.googleapis.com?project=57205882938" target="_blank" rel="noopener">People API page</a> and click <b>Enable</b>.</li>
+            <li>In Google Auth Platform, go to <b>Audience</b> and add your Gmail address as a test user.</li>
+            <li>Back in Chillmail, click <b>+ Add Gmail</b> under Accounts, or press <b>Sync</b>, and approve the permissions.</li>
+          </ol>
+          <p><b>Outlook (optional)</b>: register a free app at <a href="https://entra.microsoft.com" target="_blank" rel="noopener">entra.microsoft.com</a>, then paste its Client ID into the Outlook field below.</p>
+        </div>
       </details>
 
       <div class="form-group">
@@ -1024,7 +1037,7 @@
           ...opts,
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers || {}) }
         });
-        if (res.ok) return res.json();
+        if (res.ok) return res.status === 204 ? {} : res.json();
 
         const text = await res.text();
         const quota = res.status === 429 || (res.status === 403 && /quota|rate/i.test(text));
@@ -2187,6 +2200,7 @@
       const tag = i.kind === 'scheduled' ? '<span class="tag">Scheduled</span>' : i.kind === 'local-draft' ? '<span class="tag">Draft</span>' : '';
       return `
         <div class="email-card ${isUnread(i) ? 'unread' : ''}" onclick="openItem('${i.kind}', '${esc(i.id)}')">
+          ${i.kind === 'mail' ? `<input type="checkbox" class="sel-box" ${selectedIds.has(i.id) ? 'checked' : ''} onclick="event.stopPropagation(); toggleSelect('${esc(i.id)}', this.checked)">` : ''}
           <div style="min-width: 0;">
             <h4>${esc(i.subject || '(no subject)')}${tag}</h4>
             <div style="font-size: 0.85rem; color: var(--text-muted);">${esc(who)}</div>
@@ -2209,6 +2223,7 @@
         currentPage = 1;
         pagerFolder = currentFolder;
         pagerQuery = query;
+        selectedIds.clear();
       }
 
       let items;
@@ -2232,6 +2247,7 @@
           currentFolder === 'drafts' ? 'No drafts yet.' : 'Nothing here yet. Click Sync to load your mail.';
         list.innerHTML = `<p class="empty-state">${hint}</p>`;
         renderPager(0, 0, 1, 0);
+        renderBulkBar([]);
         return;
       }
 
@@ -2266,6 +2282,7 @@
 
       if (!html) html = `<p class="empty-state">${total ? '' : 'All sections are collapsed. Open one to see its emails.'}</p>`;
       list.innerHTML = html;
+      renderBulkBar(pageItems);
       renderPager(total ? start + 1 : 0, Math.min(start + pageSize, total), pages, total);
     }
 
@@ -2507,6 +2524,86 @@
         subject,
         body: `\n\nOn ${fmtDate(m.date)}, ${m.from} wrote:\n${quoted}`
       }, null, { id, threadId: m.threadId, rfcId, provider: activeProvider() });
+    }
+
+    // ---------- Selection and bulk actions ----------
+    let selectedIds = new Set();
+    let pageMailIds = [];
+
+    function toggleSelect(id, on) {
+      if (on) selectedIds.add(id); else selectedIds.delete(id);
+      renderFolder();
+    }
+
+    function selectPage(on) {
+      pageMailIds.forEach(id => { if (on) selectedIds.add(id); else selectedIds.delete(id); });
+      renderFolder();
+    }
+
+    function renderBulkBar(pageItems) {
+      const bar = document.getElementById('bulkBar');
+      const isMail = ['inbox', 'sent', 'spam', 'bin'].includes(currentFolder);
+      pageMailIds = pageItems.filter(i => i.kind === 'mail').map(i => i.id);
+      if (!isMail || (!pageMailIds.length && !selectedIds.size)) { bar.innerHTML = ''; return; }
+
+      const n = selectedIds.size;
+      const allOn = pageMailIds.length > 0 && pageMailIds.every(id => selectedIds.has(id));
+      const dis = n ? '' : 'disabled';
+      bar.innerHTML = `
+        <label class="bulk-check"><input type="checkbox" ${allOn ? 'checked' : ''} onchange="selectPage(this.checked)"> ${n ? `${n} selected` : 'Select page'}</label>
+        <span class="bulk-actions">
+          <button class="pg" ${dis} onclick="bulkAction('read')">Mark read</button>
+          <button class="pg" ${dis} onclick="bulkAction('unread')">Mark unread</button>
+          <button class="pg" ${dis} onclick="bulkAction('spam')">Spam</button>
+          <button class="pg" ${dis} onclick="bulkAction('delete')">Delete</button>
+        </span>`;
+    }
+
+    async function bulkAction(action) {
+      const ids = [...selectedIds];
+      if (!ids.length) return;
+      if (action === 'delete' && !confirm(`Move ${ids.length} email${ids.length === 1 ? '' : 's'} to Bin?`)) return;
+      if (action === 'spam' && !confirm(`Move ${ids.length} email${ids.length === 1 ? '' : 's'} to Spam?`)) return;
+
+      try {
+        if (activeProvider() === 'microsoft') {
+          const folderFor = { delete: 'deleteditems', spam: 'junkemail' };
+          if (action === 'read' || action === 'unread') {
+            await mapLimit(ids, 4, id => graphApi(`me/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead: action === 'read' }) }));
+          } else {
+            await mapLimit(ids, 4, id => graphApi(`me/messages/${id}/move`, { method: 'POST', body: JSON.stringify({ destinationId: folderFor[action] }) }));
+          }
+        } else {
+          const change = {
+            read: { removeLabelIds: ['UNREAD'] },
+            unread: { addLabelIds: ['UNREAD'] },
+            spam: { addLabelIds: ['SPAM'], removeLabelIds: ['INBOX'] },
+            delete: { addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] }
+          }[action];
+          for (let i = 0; i < ids.length; i += 500) {
+            await gmailApi('messages/batchModify', { method: 'POST', body: JSON.stringify({ ids: ids.slice(i, i + 500), ...change }) });
+          }
+        }
+      } catch (err) {
+        alert(`Couldn't finish that: ${err.message}`);
+        return;
+      }
+
+      // Update what Chillmail shows
+      if (action === 'read' || action === 'unread') {
+        ids.forEach(id => {
+          const m = findMail(id);
+          if (m) m.unread = action === 'unread';
+          if (action === 'read') readSet.add(id); else readSet.delete(id);
+        });
+        localStorage.setItem('chill_read', JSON.stringify([...readSet]));
+      } else {
+        mailCache[currentFolder] = (mailCache[currentFolder] || []).filter(m => !ids.includes(m.id));
+        notify(action === 'delete' ? `Moved ${ids.length} to Bin` : `Moved ${ids.length} to Spam`);
+      }
+      localStorage.setItem(cacheKey(), JSON.stringify(mailCache));
+      selectedIds.clear();
+      renderFolder();
     }
 
     // ---------- Startup ----------
