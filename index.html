@@ -891,7 +891,24 @@
       return bodyCache[id];
     }
 
+    async function sendOutlookReply(msg) {
+      const toList = str => (str || '').split(/[,;]/).map(x => x.trim()).filter(Boolean).map(address => ({ emailAddress: { address } }));
+      const draft = await graphApi(`me/messages/${msg.reply.id}/createReply`, { method: 'POST', body: '{}' });
+      await graphApi(`me/messages/${draft.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ subject: msg.subject, body: { contentType: 'Text', content: msg.body || '' }, toRecipients: toList(msg.to), ccRecipients: toList(msg.cc) })
+      });
+      for (const f of msg.files || []) {
+        await graphApi(`me/messages/${draft.id}/attachments`, {
+          method: 'POST',
+          body: JSON.stringify({ '@odata.type': '#microsoft.graph.fileAttachment', name: f.name, contentType: f.type, contentBytes: f.data })
+        });
+      }
+      await graphApi(`me/messages/${draft.id}/send`, { method: 'POST', body: '{}' });
+    }
+
     async function sendViaOutlook(msg) {
+      if (msg.reply && msg.reply.provider === 'microsoft' && msg.reply.id) return sendOutlookReply(msg);
       const recips = s => (s || '').split(/[,;]/).map(x => x.trim()).filter(Boolean).map(address => ({ emailAddress: { address } }));
       const message = {
         subject: msg.subject || '',
@@ -909,6 +926,13 @@
     }
 
     // ---------- Gmail API ----------
+    async function sendViaGmail(msg) {
+      if (activeProvider() === 'microsoft') return sendViaOutlook(msg);
+      const body = { raw: buildRawMessage(msg) };
+      if (msg.reply && msg.reply.threadId) body.threadId = msg.reply.threadId;
+      return gmailApi('messages/send', { method: 'POST', body: JSON.stringify(body) });
+    }
+
     async function gmailApi(path, opts = {}) {
       const token = await getToken(false);
       for (let attempt = 0; ; attempt++) {
@@ -955,10 +979,11 @@
     }
 
     // Builds an RFC 2822 message (multipart when there are attachments), base64url-encoded
-    function buildRawMessage({ to, cc, subject, body, files = [] }) {
+    function buildRawMessage({ to, cc, subject, body, files = [], reply = null }) {
       const lines = [`To: ${to}`];
       if (cc) lines.push(`Cc: ${cc}`);
       lines.push(`Subject: ${encodeHeader(subject)}`, 'MIME-Version: 1.0');
+      if (reply && reply.rfcId) lines.push(`In-Reply-To: ${reply.rfcId}`, `References: ${reply.rfcId}`);
 
       if (!files.length) {
         lines.push('Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: base64', '', wrapB64(b64FromUtf8(body)));
@@ -983,10 +1008,6 @@
       return b64FromUtf8(lines.join('\r\n')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
 
-    async function sendViaGmail(msg) {
-      if (activeProvider() === 'microsoft') return sendViaOutlook(msg);
-      return gmailApi('messages/send', { method: 'POST', body: JSON.stringify({ raw: buildRawMessage(msg) }) });
-    }
 
     // ---------- Sync ----------
     function summarize(m) {
@@ -998,7 +1019,8 @@
         subject: h('Subject') || '(no subject)',
         date: Number(m.internalDate) || Date.now(),
         snippet: m.snippet || '',
-        unread: (m.labelIds || []).includes('UNREAD')
+        unread: (m.labelIds || []).includes('UNREAD'),
+        threadId: m.threadId
       };
     }
 
@@ -1279,8 +1301,11 @@
         item = (mailCache[folder] || []).find(x => x.id === id);
         if (!item) return;
         if (kind === 'mail') {
+          paneItemId = id;
           markRead(id);
-          actions.insertAdjacentHTML('beforeend', `<button class="compose-btn secondary" onclick="setItemUnread('${esc(id)}', true)">Mark as unread</button>`);
+          renderMailActions(id);
+        } else {
+          paneItemId = null;
         }
       }
 
@@ -1562,13 +1587,13 @@
     function winOf(id) { return composeWins.find(w => w.id === id) || null; }
     function winField(w, name) { return w.el.querySelector(`[data-f="${name}"]`); }
 
-    function newCompose(msg = {}, draftId = null) {
+    function newCompose(msg = {}, draftId = null, reply = null) {
       const id = ++winSeq;
       const wrap = document.createElement('div');
       wrap.innerHTML = windowHtml(id).trim();
       const el = wrap.firstElementChild;
       document.getElementById('composeDock').appendChild(el);
-      const w = { id, draftId, files: [], el };
+      const w = { id, draftId, files: [], el, reply: reply || msg.reply || null };
       composeWins.push(w);
       fillWin(w, msg);
       return w;
@@ -1630,7 +1655,7 @@
       const w = winOf(id);
       if (!w || isWinEmpty(w)) return;
       if (!w.draftId) w.draftId = Date.now() + Math.random();
-      const msg = { ...readWin(w), sendAt: '', files: w.files.map(f => ({ name: f.name, type: f.type, size: f.size, key: f.key })) };
+      const msg = { ...readWin(w), sendAt: '', files: w.files.map(f => ({ name: f.name, type: f.type, size: f.size, key: f.key })), reply: w.reply };
       localDrafts = localDrafts.filter(d => d.id !== w.draftId);
       localDrafts.push({ id: w.draftId, msg, updated: Date.now() });
       persistDrafts();
@@ -1752,7 +1777,7 @@
     function sendEmail(id) {
       const w = winOf(id);
       if (!w) return;
-      const msg = { ...readWin(w), files: w.files.slice() };
+      const msg = { ...readWin(w), files: w.files.slice(), reply: w.reply };
       if (!msg.to) { alert('Please enter a recipient.'); return; }
 
       if (msg.sendAt) {
@@ -2021,31 +2046,8 @@
       return null;
     }
 
-    async function setServerRead(id, read) {
-      try {
-        if (activeProvider() === 'microsoft') {
-          await graphApi(`me/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead: read }) });
-        } else {
-          await gmailApi(`messages/${id}/modify`, {
-            method: 'POST',
-            body: JSON.stringify(read ? { removeLabelIds: ['UNREAD'] } : { addLabelIds: ['UNREAD'] })
-          });
-        }
-      } catch (err) {
-        notify(`Couldn't update read status on the server: ${err.message}`, 6000);
-      }
-    }
 
     // Updates Chillmail, the local cache, and the mailbox on Gmail or Outlook
-    function setItemUnread(id, unread) {
-      const m = findMail(id);
-      if (m) m.unread = unread;
-      localStorage.setItem(cacheKey(), JSON.stringify(mailCache));
-      if (unread) readSet.delete(id); else readSet.add(id);
-      localStorage.setItem('chill_read', JSON.stringify([...readSet]));
-      setServerRead(id, !unread);
-      renderFolder();
-    }
 
     function markRead(id) {
       const m = findMail(id);
@@ -2305,6 +2307,93 @@
       localStorage.setItem('chill_contacts', JSON.stringify(contacts));
       renderContacts();
       notify('Contact saved');
+    }
+
+    let paneItemId = null; // the message currently shown in the reader pane
+
+    async function setServerRead(id, read) {
+      try {
+        if (activeProvider() === 'microsoft') {
+          await graphApi(`me/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead: read }) });
+        } else {
+          await gmailApi(`messages/${id}/modify`, {
+            method: 'POST',
+            body: JSON.stringify(read ? { removeLabelIds: ['UNREAD'] } : { addLabelIds: ['UNREAD'] })
+          });
+        }
+        return true;
+      } catch (err) {
+        notify(`Couldn't update read status on the server: ${err.message}`, 6000);
+        return false;
+      }
+    }
+
+    function renderMailActions(id) {
+      const m = findMail(id);
+      if (!m) return;
+      document.getElementById('viewActions').innerHTML = `
+        <button class="compose-btn" onclick="openReply('${esc(id)}')"><i class="fa-solid fa-reply"></i> Reply</button>
+        <button class="compose-btn secondary" onclick="setItemUnread('${esc(id)}', ${m.unread ? 'false' : 'true'})">${m.unread ? 'Mark as read' : 'Mark as unread'}</button>`;
+    }
+
+    async function setItemUnread(id, unread) {
+      const m = findMail(id);
+      if (!m) return;
+      const before = !!m.unread;
+
+      // Update right away, then check with the server
+      m.unread = unread;
+      localStorage.setItem(cacheKey(), JSON.stringify(mailCache));
+      if (unread) readSet.delete(id); else readSet.add(id);
+      localStorage.setItem('chill_read', JSON.stringify([...readSet]));
+      renderFolder();
+      if (paneItemId === id) renderMailActions(id);
+
+      const ok = await setServerRead(id, !unread);
+      if (!ok) {
+        m.unread = before;
+        if (before) readSet.delete(id); else readSet.add(id);
+        localStorage.setItem(cacheKey(), JSON.stringify(mailCache));
+        localStorage.setItem('chill_read', JSON.stringify([...readSet]));
+        renderFolder();
+        if (paneItemId === id) renderMailActions(id);
+      }
+    }
+
+    // ---------- Reply ----------
+    function htmlToText(html) {
+      if (!html) return '';
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      return (doc.body ? doc.body.textContent : '').replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    async function openReply(id) {
+      const m = findMail(id);
+      if (!m) return;
+
+      let original = m.snippet || '';
+      try {
+        const full = await loadFullMessage(id);
+        original = full.text || htmlToText(full.html) || original;
+      } catch (e) { /* fall back to the snippet */ }
+
+      // Gmail needs the original Message-ID so the reply threads correctly
+      let rfcId = null;
+      if (activeProvider() === 'google') {
+        try {
+          const r = await gmailApi(`messages/${id}?format=metadata&metadataHeaders=Message-ID`);
+          const h = (r.payload.headers || []).find(x => x.name.toLowerCase() === 'message-id');
+          rfcId = h ? h.value : null;
+        } catch (e) { /* reply still works, just without threading headers */ }
+      }
+
+      const quoted = original.split('\n').map(line => '> ' + line).join('\n');
+      const subject = /^re:/i.test(m.subject) ? m.subject : 'Re: ' + m.subject;
+      newCompose({
+        to: (parseAddr(m.from) || {}).email || m.from,
+        subject,
+        body: `\n\nOn ${fmtDate(m.date)}, ${m.from} wrote:\n${quoted}`
+      }, null, { id, threadId: m.threadId, rfcId, provider: activeProvider() });
     }
 
     // ---------- Startup ----------
