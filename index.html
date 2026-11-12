@@ -2406,7 +2406,8 @@
         return;
       }
       try {
-        const token = await requestToken('consent');
+        // No forced consent: reuse the signed-in account, and Google only asks again if the contacts permission is new
+        const token = await requestToken();
         const all = [];
         let pageToken = '';
         do {
