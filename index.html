@@ -210,6 +210,9 @@
     .back-btn { display: none; background: var(--accent-light); color: var(--accent-blue); border: none; padding: 0.45rem 0.8rem; border-radius: 10px; font-weight: 600; cursor: pointer; margin-bottom: 0.75rem; align-items: center; gap: 0.4rem; }
 
     body.is-phone .menu-fab { display: flex; }
+    .phone-back { display: none; position: fixed; top: 0.75rem; right: 0.75rem; width: 44px; height: 44px; border-radius: 50%; border: none; background: white; color: var(--accent-blue); box-shadow: var(--shadow-md); align-items: center; justify-content: center; z-index: 500; cursor: pointer; font-size: 1rem; }
+    body.is-phone .phone-back.show { display: flex; }
+    .phone-back:active { transform: scale(0.94); }
     body.is-phone .app-container { animation: none; opacity: 1; }
     body.is-phone.nav-open .menu-fab { display: none; }
     body.is-phone.nav-open .sidebar { z-index: 700; }
@@ -310,6 +313,7 @@
 
   <div class="app-container">
     <div id="navScrim" onclick="closeNav()"></div>
+  <button id="phoneBack" class="phone-back" onclick="phoneBack()" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button>
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="brand">
@@ -928,7 +932,30 @@
 
     // Must be called directly from a click (browsers block popups otherwise).
     // prompt '' reuses the current Google session; 'select_account' lets the user add another account.
+    // After a token arrives: check the account, store it, and make it the active one
+    async function storeGoogleToken(resp) {
+      const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
+        headers: { 'Authorization': `Bearer ${resp.access_token}` }
+      });
+      if (!r.ok) throw new Error('Could not read the account details from Google.');
+      const { emailAddress } = await r.json();
+      const exp = Date.now() + Number(resp.expires_in) * 1000;
+      const existing = accounts.find(a => a.email === emailAddress);
+      if (existing) { existing.token = resp.access_token; existing.exp = exp; }
+      else accounts.push({ email: emailAddress, token: resp.access_token, exp });
+      activeEmail = emailAddress;
+      saveAccounts();
+      loadCacheForActive();
+      updateSidebarProfile();
+      return resp.access_token;
+    }
+
+    // Must be called directly from a click (browsers block popups otherwise)
     function requestToken(prompt = '') {
+      // Desktop app: sign in through the normal browser
+      if (window.chillDesktop) {
+        return window.chillDesktop.googleSignIn(GMAIL_SCOPE, activeEmail || '').then(storeGoogleToken);
+      }
       if (!GOOGLE_CLIENT_ID) {
         return Promise.reject(new Error('Add your Google Client ID in Settings first.'));
       }
@@ -939,26 +966,9 @@
         const tokenClient = google.accounts.oauth2.initTokenClient({
           client_id: GOOGLE_CLIENT_ID,
           scope: GMAIL_SCOPE,
-          callback: async (resp) => {
+          callback: (resp) => {
             if (resp.error) return reject(new Error(resp.error_description || resp.error));
-            try {
-              const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
-                headers: { 'Authorization': `Bearer ${resp.access_token}` }
-              });
-              if (!r.ok) throw new Error('Could not read the account details from Google.');
-              const { emailAddress } = await r.json();
-              const exp = Date.now() + Number(resp.expires_in) * 1000;
-              const existing = accounts.find(a => a.email === emailAddress);
-              if (existing) { existing.token = resp.access_token; existing.exp = exp; }
-              else accounts.push({ email: emailAddress, token: resp.access_token, exp });
-              activeEmail = emailAddress;
-              saveAccounts();
-              loadCacheForActive();
-              updateSidebarProfile();
-              resolve(resp.access_token);
-            } catch (err) {
-              reject(err);
-            }
+            storeGoogleToken(resp).then(resolve, reject);
           },
           error_callback: (err) => reject(new Error(err.message || err.type || 'Sign-in was cancelled')),
         });
@@ -1664,6 +1674,23 @@
       localStorage.setItem('chill_ui', JSON.stringify(ui));
       applyUI(ui);
     }
+
+    // ---------- Phone back button ----------
+    function contactsVisible() {
+      return document.getElementById('contactsView').style.display === 'flex';
+    }
+
+    function phoneBack() {
+      if (document.body.classList.contains('show-reader')) { closeReader(); return; }
+      if (contactsVisible() || currentFolder !== 'inbox') { switchView('inbox'); }
+    }
+
+    function updatePhoneBack() {
+      const show = document.body.classList.contains('is-phone') &&
+        (document.body.classList.contains('show-reader') || contactsVisible() || currentFolder !== 'inbox');
+      document.getElementById('phoneBack').classList.toggle('show', show);
+    }
+    setInterval(updatePhoneBack, 300);
 
     // ---------- Phone navigation ----------
     function toggleNav() { document.body.classList.toggle('nav-open'); }
