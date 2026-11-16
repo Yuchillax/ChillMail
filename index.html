@@ -291,12 +291,6 @@
     @keyframes floaty { 0%, 100% { transform: translateY(0); opacity: 1; } 50% { transform: translateY(-6px); opacity: 0.5; } }
     @keyframes walk { 0% { transform: translateX(0) scaleX(1); } 45% { transform: translateX(60vw) scaleX(1); } 50% { transform: translateX(60vw) scaleX(-1); } 95% { transform: translateX(0) scaleX(-1); } 100% { transform: translateX(0) scaleX(1); } }
 
-    /* Mode toggle */
-    .mode-toggle { display: flex; gap: 0.5rem; }
-    .mode-btn { flex: 1; padding: 0.6rem; border: 1px solid var(--border-color); background: white; color: var(--text-dark); border-radius: 12px; cursor: pointer; font-weight: 600; }
-    .ui-icon { display: inline-block; vertical-align: -3px; margin-right: 4px; }
-    .mode-btn.on { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
-
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
     .goog-te-banner-frame.skiptranslate, .goog-te-gadget-icon { display: none !important; }
@@ -627,14 +621,6 @@
         <button class="compose-btn secondary" style="margin-top: 0.5rem; padding: 0.5rem 0.9rem;" onclick="addAccount()">+ Add Gmail</button>
       </div>
       <div class="form-group">
-        <label>Mode</label>
-        <div class="mode-toggle" role="group" aria-label="Mode">
-          <button type="button" class="mode-btn" data-mode="privacy" onclick="setMode('privacy')"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Privacy</button>
-          <button type="button" class="mode-btn" data-mode="convenience" onclick="setMode('convenience')"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg> Convenience</button>
-        </div>
-        <p id="modeText" class="lang-note" style="margin-top: 0.5rem;"></p>
-      </div>
-      <div class="form-group">
         <label>Emails to load per folder (more means slower sync)</label>
         <select id="settingSyncLimit" class="form-input">
           <option value="100">100</option>
@@ -824,7 +810,6 @@
 
       localStorage.setItem('chill_name', name);
       localStorage.setItem('chill_avatar', avatar);
-      localStorage.setItem('chill_ms_client_id', document.getElementById('settingMsClientId').value.trim());
       msalApp = null;
       localStorage.setItem('chill_sync_limit', document.getElementById('settingSyncLimit').value);
 
@@ -842,7 +827,6 @@
       const clientId = GOOGLE_CLIENT_ID;
 
       document.getElementById('settingName').value = name;
-      document.getElementById('settingMsClientId').value = localStorage.getItem('chill_ms_client_id') || '';
       document.getElementById('settingSyncLimit').value = localStorage.getItem('chill_sync_limit') || '300';
       document.getElementById('avatarPreview').src = avatar;
       document.getElementById('sidebarName').innerText = name;
@@ -2994,33 +2978,6 @@
       });
     }
 
-    // ---------- Privacy / Convenience mode ----------
-    // Privacy (default): everything stays on this device.
-    // Convenience: reserved for optional cloud sync. Sync isn't built yet, so both modes behave the same for now.
-    const MODE_TEXT = {
-      privacy: 'Your mail, contacts, drafts and settings stay on this device. Nothing is stored on Chillmail servers.',
-      convenience: 'Convenience mode will let you sync settings, contacts, drafts and rules across devices. Sync isn\'t available yet, so your data still stays on this device for now.'
-    };
-
-    function getMode() {
-      return localStorage.getItem('chill_mode') === 'convenience' ? 'convenience' : 'privacy';
-    }
-
-    function setMode(mode) {
-      localStorage.setItem('chill_mode', mode === 'convenience' ? 'convenience' : 'privacy');
-      applyMode();
-    }
-
-    function applyMode() {
-      const mode = getMode();
-      document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
-      document.getElementById('modeText').textContent = MODE_TEXT[mode];
-      document.body.classList.toggle('mode-convenience', mode === 'convenience');
-    }
-
-    // Gmail is the only provider now
-    function activeProvider() { return 'google'; }
-
     // ---------- Startup ----------
     window.addEventListener('load', () => {
       setTimeout(() => {
@@ -3033,7 +2990,6 @@
       applyLogo();
       applyUI();
       initExtras();
-      applyMode();
       loadCacheForActive();
       renderFolder();
       migrateLegacyToken().then(() => {
