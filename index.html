@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chillmail — Serene Email Experience</title>
   <script src="https://accounts.google.com/gsi/client" async defer onerror="window.gsiFailed = true"></script>
-  <script src="https://alcdn.msauth.net/browser/2.39.0/js/msal-browser.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;600;700&family=Nunito:wght@400;600;700&family=Lora:wght@400;600;700&family=Space+Grotesk:wght@400;600;700&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -291,6 +290,12 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes floaty { 0%, 100% { transform: translateY(0); opacity: 1; } 50% { transform: translateY(-6px); opacity: 0.5; } }
     @keyframes walk { 0% { transform: translateX(0) scaleX(1); } 45% { transform: translateX(60vw) scaleX(1); } 50% { transform: translateX(60vw) scaleX(-1); } 95% { transform: translateX(0) scaleX(-1); } 100% { transform: translateX(0) scaleX(1); } }
+
+    /* Mode toggle */
+    .mode-toggle { display: flex; gap: 0.5rem; }
+    .mode-btn { flex: 1; padding: 0.6rem; border: 1px solid var(--border-color); background: white; color: var(--text-dark); border-radius: 12px; cursor: pointer; font-weight: 600; }
+    .ui-icon { display: inline-block; vertical-align: -3px; margin-right: 4px; }
+    .mode-btn.on { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
 
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
@@ -602,7 +607,6 @@
             <li>In Google Auth Platform, go to <b>Audience</b> and add your Gmail address as a test user.</li>
             <li>Back in Chillmail, click <b>+ Add Gmail</b> under Accounts, or press <b>Sync</b>, and approve the permissions.</li>
           </ol>
-          <p><b>Outlook (optional)</b>: register a free app at <a href="https://entra.microsoft.com" target="_blank" rel="noopener">entra.microsoft.com</a>, then paste its Client ID into the Outlook field below.</p>
         </div>
       </details>
 
@@ -621,7 +625,14 @@
         <label>Accounts</label>
         <div id="accountList"></div>
         <button class="compose-btn secondary" style="margin-top: 0.5rem; padding: 0.5rem 0.9rem;" onclick="addAccount()">+ Add Gmail</button>
-        <button class="compose-btn secondary" style="margin-top: 0.5rem; padding: 0.5rem 0.9rem;" onclick="addMicrosoftAccount()">+ Add Outlook</button>
+      </div>
+      <div class="form-group">
+        <label>Mode</label>
+        <div class="mode-toggle" role="group" aria-label="Mode">
+          <button type="button" class="mode-btn" data-mode="privacy" onclick="setMode('privacy')"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Privacy</button>
+          <button type="button" class="mode-btn" data-mode="convenience" onclick="setMode('convenience')"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg> Convenience</button>
+        </div>
+        <p id="modeText" class="lang-note" style="margin-top: 0.5rem;"></p>
       </div>
       <div class="form-group">
         <label>Emails to load per folder (more means slower sync)</label>
@@ -643,10 +654,6 @@
           <select id="ruleAction" class="pg-size"><option value="read">Mark as read</option><option value="spam">Move to Spam</option><option value="bin">Move to Bin</option></select>
           <button class="compose-btn" style="padding: 0.5rem 0.8rem;" onclick="addRule()">Add rule</button>
         </div>
-      </div>
-      <div class="form-group">
-        <label>Microsoft (Outlook) Client ID</label>
-        <input type="text" id="settingMsClientId" class="form-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
       </div>
 
       <div class="btn-row">
@@ -729,8 +736,9 @@
     // ---------- State ----------
     let contacts = JSON.parse(localStorage.getItem('chill_contacts') || '[]');
     let googleContacts = JSON.parse(localStorage.getItem('chill_google_contacts') || '[]');
-    let accounts = JSON.parse(localStorage.getItem('chill_accounts') || '[]');
-    let activeEmail = localStorage.getItem('chill_active_email') || (accounts[0] ? accounts[0].email : null);
+    let accounts = JSON.parse(localStorage.getItem('chill_accounts') || '[]').filter(a => a.provider !== 'microsoft');
+    let activeEmail = localStorage.getItem('chill_active_email');
+    if (!accounts.find(a => a.email === activeEmail)) activeEmail = accounts[0] ? accounts[0].email : null;
     let mailCache = {};
     let localDrafts = JSON.parse(localStorage.getItem('chill_local_drafts') || '[]');
     let scheduled = JSON.parse(localStorage.getItem('chill_scheduled') || '[]');
@@ -1057,64 +1065,15 @@
     const MS_FOLDERS = { inbox: 'inbox', sent: 'sentitems', drafts: 'drafts', spam: 'junkemail', bin: 'deleteditems' };
     let msalApp = null;
 
-    function activeProvider() {
-      const a = activeAccount();
-      return a && a.provider === 'microsoft' ? 'microsoft' : 'google';
-    }
 
     function hasSession() {
       return activeProvider() === 'microsoft' ? !!activeAccount() : !!getStoredToken();
     }
 
-    function getMsalApp() {
-      if (msalApp) return msalApp;
-      if (!window.msal) throw new Error("Microsoft's sign-in script didn't load. Check your connection or ad blockers, then try again.");
-      const clientId = localStorage.getItem('chill_ms_client_id');
-      if (!clientId) throw new Error('Add your Microsoft Client ID in Settings first.');
-      msalApp = new msal.PublicClientApplication({
-        auth: {
-          clientId,
-          authority: 'https://login.microsoftonline.com/common',
-          redirectUri: new URL('auth.html', location.href).href
-        },
-        cache: { cacheLocation: 'localStorage' }
-      });
-      return msalApp;
-    }
 
     // Must be called directly from a click (popups are blocked otherwise)
-    function addMicrosoftAccount() {
-      let app;
-      try { app = getMsalApp(); } catch (err) { alert(err.message); return; }
-      app.loginPopup({ scopes: MS_SCOPES, prompt: 'select_account' })
-        .then(res => {
-          const email = res.account.username;
-          if (!accounts.find(a => a.email === email && a.provider === 'microsoft')) {
-            accounts.push({ provider: 'microsoft', email });
-          }
-          activeEmail = email;
-          saveAccounts();
-          loadCacheForActive();
-          updateSidebarProfile();
-          renderAccounts();
-          renderFolder();
-          syncAll(false);
-        })
-        .catch(err => alert(`Outlook sign-in failed: ${err.message || err.errorCode || err}`));
-    }
 
     // Silent token from the cached session; interactive=true may open a popup (needs a click)
-    async function getMsToken(email, interactive = false) {
-      const app = getMsalApp();
-      const account = app.getAccountByUsername(email);
-      if (!account) throw new Error('Sign in to this Outlook account again.');
-      try {
-        return (await app.acquireTokenSilent({ scopes: MS_SCOPES, account })).accessToken;
-      } catch (err) {
-        if (!interactive) throw new Error('Outlook session expired. Click Sync to reconnect.');
-        return (await app.acquireTokenPopup({ scopes: MS_SCOPES, account })).accessToken;
-      }
-    }
 
     async function ensureSession(interactive = false) {
       const acc = activeAccount();
@@ -1122,89 +1081,11 @@
       return getToken(interactive);
     }
 
-    async function graphApi(path, opts = {}) {
-      const acc = activeAccount();
-      const token = await getMsToken(acc.email, false);
-      const url = path.startsWith('https://') ? path : 'https://graph.microsoft.com/v1.0/' + path;
-      const res = await fetch(url, {
-        ...opts,
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers || {}) }
-      });
-      if (!res.ok) throw new Error(`Outlook error ${res.status}: ${(await res.text()).slice(0, 160)}`);
-      return res.status === 202 || res.status === 204 ? {} : res.json();
-    }
-
-    function graphSummary(m) {
-      const addr = m.from && m.from.emailAddress;
-      return {
-        id: m.id,
-        from: addr ? (addr.name ? `${addr.name} <${addr.address}>` : addr.address) : '',
-        to: (m.toRecipients || []).map(r => r.emailAddress.address).join(', '),
-        subject: m.subject || '(no subject)',
-        date: new Date(m.receivedDateTime || m.lastModifiedDateTime || Date.now()).getTime(),
-        snippet: m.bodyPreview || '',
-        unread: m.isRead === false
-      };
-    }
 
 
-    async function loadOutlookMessage(id) {
-      const m = await graphApi(`me/messages/${id}?$select=body,hasAttachments`);
-      let html = '';
-      let text = '';
-      if (m.body) {
-        if (String(m.body.contentType).toLowerCase() === 'html') html = m.body.content;
-        else text = m.body.content;
-      }
-      const attachments = [];
-      if (m.hasAttachments) {
-        const a = await graphApi(`me/messages/${id}/attachments`);
-        (a.value || []).forEach(att => {
-          if (att['@odata.type'] !== '#microsoft.graph.fileAttachment') return;
-          if (att.isInline && att.contentId) {
-            html = html.split(`cid:${att.contentId}`).join(`data:${att.contentType};base64,${att.contentBytes}`);
-          } else {
-            attachments.push({ name: att.name, mimeType: att.contentType, data: att.contentBytes });
-          }
-        });
-      }
-      bodyCache[id] = { html, text, attachments, messageId: id };
-      return bodyCache[id];
-    }
 
-    async function sendOutlookReply(msg) {
-      const toList = str => (str || '').split(/[,;]/).map(x => x.trim()).filter(Boolean).map(address => ({ emailAddress: { address } }));
-      const draft = await graphApi(`me/messages/${msg.reply.id}/createReply`, { method: 'POST', body: '{}' });
-      await graphApi(`me/messages/${draft.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ subject: msg.subject, body: { contentType: 'Text', content: msg.body || '' }, toRecipients: toList(msg.to), ccRecipients: toList(msg.cc) })
-      });
-      for (const f of msg.files || []) {
-        await graphApi(`me/messages/${draft.id}/attachments`, {
-          method: 'POST',
-          body: JSON.stringify({ '@odata.type': '#microsoft.graph.fileAttachment', name: f.name, contentType: f.type, contentBytes: f.data })
-        });
-      }
-      await graphApi(`me/messages/${draft.id}/send`, { method: 'POST', body: '{}' });
-    }
 
-    async function sendViaOutlook(msg) {
-      if (msg.reply && msg.reply.provider === 'microsoft' && msg.reply.id) return sendOutlookReply(msg);
-      const recips = s => (s || '').split(/[,;]/).map(x => x.trim()).filter(Boolean).map(address => ({ emailAddress: { address } }));
-      const message = {
-        subject: msg.subject || '',
-        body: { contentType: 'Text', content: msg.body || '' },
-        toRecipients: recips(msg.to),
-        ccRecipients: recips(msg.cc),
-        attachments: (msg.files || []).map(f => ({
-          '@odata.type': '#microsoft.graph.fileAttachment',
-          name: f.name,
-          contentType: f.type,
-          contentBytes: f.data
-        }))
-      };
-      return graphApi('me/sendMail', { method: 'POST', body: JSON.stringify({ message, saveToSentItems: true }) });
-    }
+
 
     // ---------- Gmail API ----------
     async function sendViaGmail(msg) {
@@ -1365,17 +1246,6 @@
       mailCache[folder] = ids.map(id => byId.get(id)).filter(Boolean);
     }
 
-    async function syncOutlookFolder(folder) {
-      const limit = SYNC_LIMIT();
-      let url = `me/mailFolders/${MS_FOLDERS[folder]}/messages?$top=${Math.min(100, limit)}&$select=id,subject,from,toRecipients,receivedDateTime,lastModifiedDateTime,bodyPreview,isRead`;
-      const items = [];
-      while (url && items.length < limit) {
-        const d = await graphApi(url);
-        items.push(...(d.value || []));
-        url = d['@odata.nextLink'] || '';
-      }
-      mailCache[folder] = items.slice(0, limit).map(graphSummary);
-    }
 
     async function syncAll(interactive = false) {
       if (syncing) return;
@@ -2098,7 +1968,7 @@
     function renderWinFiles(w) {
       const warn = winField(w, 'warn');
       const warnings = attachmentWarnings(w);
-      warn.innerHTML = warnings.map(t => `<div>⚠ ${esc(t)}</div>`).join('');
+      warn.innerHTML = warnings.map(t => `<div><svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align: -2px;"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ${esc(t)}</div>`).join('');
       warn.style.display = warnings.length ? 'block' : 'none';
       winField(w, 'files').innerHTML = w.files.map((f, i) =>
         `<span style="background: var(--accent-light); padding: 0.25rem 0.6rem; border-radius: 8px; font-size: 0.85rem;">${esc(f.name)} <a href="#" onclick="removeWinFile(${w.id}, ${i}); return false;" style="color: inherit; text-decoration: none;">✕</a></span>`
@@ -2901,7 +2771,7 @@
       applyRules(fresh);
       const ui = loadUI();
       const text = `${fresh.length} new email${fresh.length === 1 ? '' : 's'}`;
-      if (ui.notify === 'on') notify(`📬 ${text}`, 4000);
+      if (ui.notify === 'on') notify(`${text}`, 4000);
       playSfx('newmail');
       if (ui.desktop === 'on' && 'Notification' in window && Notification.permission === 'granted') {
         new Notification('Chillmail', { body: `${text}: ${fresh[0].subject || '(no subject)'}` });
@@ -3068,7 +2938,7 @@
 
     // ---------- Penguin ----------
     const PENG_LINES = [
-      'Stay chill ❄',
+      'Stay chill',
       'Inbox zero is a myth, but a nice one.',
       'Did you drink some water today?',
       'Waddle waddle.',
@@ -3124,6 +2994,33 @@
       });
     }
 
+    // ---------- Privacy / Convenience mode ----------
+    // Privacy (default): everything stays on this device.
+    // Convenience: reserved for optional cloud sync. Sync isn't built yet, so both modes behave the same for now.
+    const MODE_TEXT = {
+      privacy: 'Your mail, contacts, drafts and settings stay on this device. Nothing is stored on Chillmail servers.',
+      convenience: 'Convenience mode will let you sync settings, contacts, drafts and rules across devices. Sync isn\'t available yet, so your data still stays on this device for now.'
+    };
+
+    function getMode() {
+      return localStorage.getItem('chill_mode') === 'convenience' ? 'convenience' : 'privacy';
+    }
+
+    function setMode(mode) {
+      localStorage.setItem('chill_mode', mode === 'convenience' ? 'convenience' : 'privacy');
+      applyMode();
+    }
+
+    function applyMode() {
+      const mode = getMode();
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+      document.getElementById('modeText').textContent = MODE_TEXT[mode];
+      document.body.classList.toggle('mode-convenience', mode === 'convenience');
+    }
+
+    // Gmail is the only provider now
+    function activeProvider() { return 'google'; }
+
     // ---------- Startup ----------
     window.addEventListener('load', () => {
       setTimeout(() => {
@@ -3136,6 +3033,7 @@
       applyLogo();
       applyUI();
       initExtras();
+      applyMode();
       loadCacheForActive();
       renderFolder();
       migrateLegacyToken().then(() => {
