@@ -815,7 +815,6 @@
 
       localStorage.setItem('chill_name', name);
       localStorage.setItem('chill_avatar', avatar);
-      msalApp = null;
       localStorage.setItem('chill_sync_limit', document.getElementById('settingSyncLimit').value);
 
       document.getElementById('sidebarName').innerText = name;
@@ -1049,14 +1048,20 @@
         </div>`).join('');
     }
 
-    // ---------- Outlook / Microsoft accounts ----------
     const MS_SCOPES = ['User.Read', 'Mail.ReadWrite', 'Mail.Send'];
     const MS_FOLDERS = { inbox: 'inbox', sent: 'sentitems', drafts: 'drafts', spam: 'junkemail', bin: 'deleteditems' };
-    let msalApp = null;
 
+
+    // Gmail is the only provider now
+    function activeProvider() { return 'google'; }
+
+    // Gets a Gmail session (interactive=true may open the Google sign-in)
+    function ensureSession(interactive = false) {
+      return getToken(interactive);
+    }
 
     function hasSession() {
-      return activeProvider() === 'microsoft' ? !!activeAccount() : !!getStoredToken();
+      return !!getStoredToken();
     }
 
 
@@ -1064,11 +1069,6 @@
 
     // Silent token from the cached session; interactive=true may open a popup (needs a click)
 
-    async function ensureSession(interactive = false) {
-      const acc = activeAccount();
-      if (acc && acc.provider === 'microsoft') return getMsToken(acc.email, interactive);
-      return getToken(interactive);
-    }
 
 
 
@@ -1078,7 +1078,6 @@
 
     // ---------- Gmail API ----------
     async function sendViaGmail(msg) {
-      if (activeProvider() === 'microsoft') return sendViaOutlook(msg);
       const body = { raw: buildRawMessage(msg) };
       if (msg.reply && msg.reply.threadId) body.threadId = msg.reply.threadId;
       return gmailApi('messages/send', { method: 'POST', body: JSON.stringify(body) });
@@ -1220,7 +1219,6 @@
 
 
     async function syncFolder(folder) {
-      if (activeProvider() === 'microsoft') return syncOutlookFolder(folder);
       const limit = SYNC_LIMIT();
       const ids = folder === 'drafts'
         ? (await gmailListAll('drafts', 'drafts', limit)).map(d => d.message.id)
@@ -1295,7 +1293,6 @@
     // Fetches the complete message: HTML/text body, inline images and attachment names
     async function loadFullMessage(id) {
       if (bodyCache[id]) return bodyCache[id];
-      if (activeProvider() === 'microsoft') return loadOutlookMessage(id);
 
       const m = await gmailApi(`messages/${id}?format=full`);
       const parts = flattenParts(m.payload);
@@ -1944,13 +1941,6 @@
       const warnings = ['Attachments are stored only in this browser. Clearing site data, or opening Chillmail on another device, removes them.'];
       const total = w.files.reduce((n, f) => n + (f.size || 0), 0);
       const mb = n => (n / (1024 * 1024)).toFixed(1);
-      if (activeProvider() === 'microsoft') {
-        if (w.files.some(f => f.size > 3 * 1024 * 1024)) {
-          warnings.push('Outlook accepts attachments up to about 3 MB each. Larger files will fail to send.');
-        }
-      } else if (total > 18 * 1024 * 1024) {
-        warnings.push(`These attachments total ${mb(total)} MB. Gmail rejects emails over about 25 MB, so this will fail.`);
-      }
       return warnings;
     }
 
@@ -2479,10 +2469,6 @@
 
     // Reads the Google address book (needs the contacts permission and the People API enabled)
     async function importGoogleContacts() {
-      if (activeProvider() === 'microsoft') {
-        alert('Google contacts can only be imported into a Gmail account. Switch to a Gmail account first.');
-        return;
-      }
       try {
         // No forced consent: reuse the signed-in account, and Google only asks again if the contacts permission is new
         const token = await requestToken();
@@ -2523,14 +2509,6 @@
 
     async function setServerRead(id, read) {
       try {
-        if (activeProvider() === 'microsoft') {
-          await graphApi(`me/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead: read }) });
-        } else {
-          await gmailApi(`messages/${id}/modify`, {
-            method: 'POST',
-            body: JSON.stringify(read ? { removeLabelIds: ['UNREAD'] } : { addLabelIds: ['UNREAD'] })
-          });
-        }
         return true;
       } catch (err) {
         notify(`Couldn't update read status on the server: ${err.message}`, 6000);
@@ -2646,24 +2624,6 @@
       if (action === 'spam' && !confirm(`Move ${ids.length} email${ids.length === 1 ? '' : 's'} to Spam?`)) return;
 
       try {
-        if (activeProvider() === 'microsoft') {
-          const folderFor = { delete: 'deleteditems', spam: 'junkemail' };
-          if (action === 'read' || action === 'unread') {
-            await mapLimit(ids, 4, id => graphApi(`me/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead: action === 'read' }) }));
-          } else {
-            await mapLimit(ids, 4, id => graphApi(`me/messages/${id}/move`, { method: 'POST', body: JSON.stringify({ destinationId: folderFor[action] }) }));
-          }
-        } else {
-          const change = {
-            read: { removeLabelIds: ['UNREAD'] },
-            unread: { addLabelIds: ['UNREAD'] },
-            spam: { addLabelIds: ['SPAM'], removeLabelIds: ['INBOX'] },
-            delete: { addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] }
-          }[action];
-          for (let i = 0; i < ids.length; i += 500) {
-            await gmailApi('messages/batchModify', { method: 'POST', body: JSON.stringify({ ids: ids.slice(i, i + 500), ...change }) });
-          }
-        }
       } catch (err) {
         alert(`Couldn't finish that: ${err.message}`);
         return;
@@ -2802,23 +2762,6 @@
 
     async function serverBulk(action, ids) {
       if (!ids.length) return;
-      if (activeProvider() === 'microsoft') {
-        const folderFor = { bin: 'deleteditems', spam: 'junkemail' };
-        if (action === 'read') {
-          await mapLimit(ids, 4, id => graphApi(`me/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead: true }) }));
-        } else {
-          await mapLimit(ids, 4, id => graphApi(`me/messages/${id}/move`, { method: 'POST', body: JSON.stringify({ destinationId: folderFor[action] }) }));
-        }
-      } else {
-        const change = {
-          read: { removeLabelIds: ['UNREAD'] },
-          spam: { addLabelIds: ['SPAM'], removeLabelIds: ['INBOX'] },
-          bin: { addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] }
-        }[action];
-        for (let i = 0; i < ids.length; i += 500) {
-          await gmailApi('messages/batchModify', { method: 'POST', body: JSON.stringify({ ids: ids.slice(i, i + 500), ...change }) });
-        }
-      }
     }
 
     async function applyRules(emails) {
@@ -2886,7 +2829,7 @@
     // ---------- Tutorial ----------
     const TOUR = [
       { title: 'Welcome to Chillmail', text: 'A calm, browser-based email app. This quick tour shows you the main parts. You can skip it at any time and replay it from Personalise.' },
-      { title: 'Accounts', text: 'Open Settings to add a Gmail or Outlook account. Chillmail shows the account you are using under the logo in the sidebar, and you can switch accounts in Settings.' },
+      { title: 'Accounts', text: 'Open Settings to add a Gmail account. Chillmail shows the account you are using under the logo in the sidebar, and you can switch accounts in Settings.' },
       { title: 'The sidebar', text: 'Inbox, Sent, Drafts, Scheduled, Spam, Bin and Contacts. Personalise and Settings are at the bottom. Press Sync to fetch new mail.' },
       { title: 'Writing email', text: 'Press Compose to open a message window in the bottom right. You can open several at once. Drafts save as you type. Use – to shrink a window and ✕ to close it (the draft stays in Drafts).' },
       { title: 'Reading and selecting', text: 'Click an email to read it on the right (or left, if you choose). Drag the thin divider to resize. Tick the boxes to select several emails, then mark them read or unread, move them to Spam, or delete them.' },
